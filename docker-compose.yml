@@ -1,0 +1,21 @@
+services:
+    mysql:
+        image: mysql:8.0
+        container_name: mysql
+        restart: always
+        environment:
+            MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+            MYSQL_DATABASE: ${MYSQL_DATABASE}
+        ports:
+            - "3306:3306"
+        volumes:
+            - ./data/mysql/data:/var/lib/mysql:rw
+    redis:
+        image: redis:8.0.3
+        container_name: redis
+        restart: always
+        ports:
+        - "6379:6379"
+        volumes:
+        - ./data/redis_data:/data:rw
+        command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
