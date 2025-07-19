@@ -4,6 +4,7 @@ import (
 	"LanMei/bot/biz/handler"
 	"LanMei/bot/biz/logic"
 	"LanMei/bot/config"
+	"LanMei/bot/utils/file"
 	"LanMei/bot/utils/llog"
 	"context"
 	"fmt"
@@ -41,6 +42,7 @@ func InitBotEngine() {
 		// 群@机器人消息事件
 		handler.GroupATMessageEventHandler(),
 	)
+	go file.PrepareFile(api)
 	// 这里的 handler 用于配置 webhook 的回调验证，详见 qq 机器人开发文档。
 	http.HandleFunc(path_, func(writer http.ResponseWriter, request *http.Request) {
 		webhook.HTTPHandler(writer, request, credentials)

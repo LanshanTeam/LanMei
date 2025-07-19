@@ -25,6 +25,7 @@ const (
 	NORMAL_SIGN = "/签到"
 	RANK        = "/排名"
 	SET_NAME    = "/设置昵称"
+	TALUO       = "/抽塔罗牌"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -59,6 +60,8 @@ func (p ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMess
 // 生成回复消息。
 func MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 	var msg string
+	var FileInfo []byte
+	MsgType := dto.TextMsg
 	// 先看看是不是指令。
 	switch true {
 	case input == PING:
@@ -76,16 +79,24 @@ func MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 			break
 		}
 		msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
+	case input == TALUO:
+		FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
+		MsgType = dto.RichMediaMsg
 	default:
+		// TODO：接入 AI 大模型
 		msg = "收到：" + input
 	}
 	return &dto.MessageToCreate{
+		MsgType:   MsgType,
 		Timestamp: time.Now().UnixMilli(),
 		Content:   msg,
 		MessageReference: &dto.MessageReference{
 			// 引用这条消息
 			MessageID:             data.ID,
 			IgnoreGetMessageError: true,
+		},
+		Media: &dto.MediaInfo{
+			FileInfo: []byte(FileInfo),
 		},
 		MsgID: data.ID,
 	}
