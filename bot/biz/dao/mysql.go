@@ -105,10 +105,10 @@ func (m *DBManagerImpl) AddPoint(user *model.User, point int) error {
 	return nil
 }
 
-func (m *DBManagerImpl) GetUserRank(qqId string) (int, error) {
+func (m *DBManagerImpl) GetUserRank(user *model.User) (int, error) {
 	var rank int64
-	err := m.db.db.Model(&model.User{}).
-		Where("point > (?)", m.db.db.Model(&model.User{}).Select("point").Where("qq_id = ?", qqId)).
+	err := m.db.db.Model(user).
+		Where("point > (?)", m.db.db.Model(user).Select("point").Where("qq_id = ?", user.QQId)).
 		Count(&rank).Error
 	if err != nil {
 		llog.Error("查询用户排名失败: %v", err)

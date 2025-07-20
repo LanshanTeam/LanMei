@@ -4,6 +4,7 @@ import (
 	"LanMei/bot/biz/dao"
 	"LanMei/bot/biz/model"
 	"LanMei/bot/utils/llog"
+	"context"
 	"fmt"
 	"math/rand"
 	"time"
@@ -40,7 +41,17 @@ func Sign(qqId string, random bool) string {
 		llog.Error("签到失败：", err)
 		return fmt.Sprintln("出错了，详见日志")
 	}
-	rank, err := dao.DBManager.GetUserRank(qqId)
+	err = dao.DBManager.MarkAsSigned(context.Background(), qqId)
+	if err != nil {
+		llog.Error("签到失败，原因为：", err)
+		rank, err := dao.DBManager.GetUserRank(user)
+		if err != nil {
+			llog.Debug("查询排名失败！")
+			rank = -1
+		}
+		return fmt.Sprintf("\n今天已经签到过了，明天再来吧\n目前你积分为%v\n排名第%v位", user.Point, rank)
+	}
+	rank, err := dao.DBManager.GetUserRank(user)
 	if err != nil {
 		llog.Debug("查询排名失败！")
 		rank = -1

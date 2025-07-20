@@ -67,10 +67,12 @@ var (
 )
 
 var Tasks chan string
-var FileData sync.Map
+var FileData *sync.Map
+var FileExpire *sync.Map
 
 func PrepareFile(api openapi.OpenAPI) {
-	FileData = sync.Map{}
+	FileData = &sync.Map{}
+	FileExpire = &sync.Map{}
 	Tasks = make(chan string, 100)
 	for task := range Tasks {
 		for _, File := range Array {
@@ -88,7 +90,8 @@ func PrepareFile(api openapi.OpenAPI) {
 				continue
 			}
 			FileData.Store(File, res.FileInfo)
-			llog.Info("加载图片成功：", res.FileInfo)
+			FileExpire.Store(File, time.Now().Add(time.Duration(res.TTL)*time.Second))
+			llog.Info("加载图片成功：", File)
 			time.Sleep(200 * time.Millisecond)
 		}
 	}

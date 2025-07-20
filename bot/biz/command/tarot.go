@@ -19,5 +19,10 @@ func Tarot(qqId string, GroupId string) ([]byte, string) {
 			FileInfo, ok = file.FileData.Load(url)
 		}
 	}
+	if FileEx, ok := file.FileExpire.Load(url); ok {
+		if time.Now().Add(20 * time.Minute).After(FileEx.(time.Time)) {
+			file.Tasks <- GroupId
+		}
+	}
 	return FileInfo.([]byte), msg
 }
