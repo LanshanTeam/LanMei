@@ -26,6 +26,7 @@ const (
 	RANK        = "/排名"
 	SET_NAME    = "/设置昵称"
 	TALUO       = "/抽塔罗牌"
+	DAILY_LUCK  = "/今日运势"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -65,27 +66,44 @@ func MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 	// 先看看是不是指令。
 	switch true {
 	case input == PING:
+		// ping 一下
 		msg = command.PingCommand()
+
 	case input == RANDOM_SIGN:
+		// 试试手气
 		// 最后一个参数代表是否随机。
 		msg = command.Sign(data.Author.ID, true)
+
 	case input == NORMAL_SIGN:
+		// 签到
 		msg = command.Sign(data.Author.ID, false)
+
 	case input == RANK:
+		// 签到的积分排名
 		msg = command.Rank()
+
 	case strings.HasPrefix(input, SET_NAME):
+		// 设置昵称
 		if len(input) <= len(SET_NAME) {
 			msg = "请输入你要设置的昵称😠"
 			break
 		}
 		msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
+
 	case input == TALUO:
+		// 抽塔罗牌
 		FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
 		MsgType = dto.RichMediaMsg
+
+	case input == DAILY_LUCK:
+		// 今日运势
+		msg = command.LuckyDaily(data.Author.ID)
 	default:
 		// TODO：接入 AI 大模型
 		msg = "收到：" + input
 	}
+
+	// 此处返回我们生成好的消息。
 	return &dto.MessageToCreate{
 		MsgType:   MsgType,
 		Timestamp: time.Now().UnixMilli(),
