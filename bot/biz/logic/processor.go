@@ -2,6 +2,8 @@ package logic
 
 import (
 	"LanMei/bot/biz/command"
+	"LanMei/bot/utils/limiter"
+	"LanMei/bot/utils/llog"
 	"context"
 	"fmt"
 	"log"
@@ -13,7 +15,8 @@ import (
 )
 
 type ProcessorImpl struct {
-	Api openapi.OpenAPI
+	Api     openapi.OpenAPI
+	limiter *limiter.Limiter
 }
 
 var Processor *ProcessorImpl
@@ -31,7 +34,8 @@ const (
 
 func InitProcessor(api openapi.OpenAPI) {
 	Processor = &ProcessorImpl{
-		Api: api,
+		Api:     api,
+		limiter: limiter.NewLimiter(),
 	}
 }
 
@@ -49,9 +53,10 @@ func genErrMessage(data dto.Message, err error) *dto.MessageToCreate {
 }
 
 // ProcessGroupMessage 回复群消息
-func (p ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMessageData) error {
-	log.Println("AT mesg")
-	msg := MessageProcess(input, dto.Message(*data))
+func (p *ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMessageData) error {
+	llog.Info("@事件触发！")
+	var msg *dto.MessageToCreate
+	msg = p.MessageProcess(input, dto.Message(*data))
 	if err := p.sendGroupReply(context.Background(), data.GroupID, msg); err != nil {
 		_ = p.sendGroupReply(context.Background(), data.GroupID, genErrMessage(dto.Message(*data), err))
 	}
@@ -59,50 +64,57 @@ func (p ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMess
 }
 
 // 生成回复消息。
-func MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
+func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 	var msg string
 	var FileInfo []byte
 	MsgType := dto.TextMsg
-	// 先看看是不是指令。
-	switch true {
-	case input == PING:
-		// ping 一下
-		msg = command.PingCommand()
 
-	case input == RANDOM_SIGN:
-		// 试试手气
-		// 最后一个参数代表是否随机。
-		msg = command.Sign(data.Author.ID, true)
+	if p.limiter.Allow(data.Author.ID) {
+		// 先看看是不是指令。
+		switch true {
+		case input == PING:
+			// ping 一下
+			msg = command.PingCommand()
 
-	case input == NORMAL_SIGN:
-		// 签到
-		msg = command.Sign(data.Author.ID, false)
+		case input == RANDOM_SIGN:
+			// 试试手气
+			// 最后一个参数代表是否随机。
+			msg = command.Sign(data.Author.ID, true)
 
-	case input == RANK:
-		// 签到的积分排名
-		msg = command.Rank()
+		case input == NORMAL_SIGN:
+			// 签到
+			msg = command.Sign(data.Author.ID, false)
 
-	case strings.HasPrefix(input, SET_NAME):
-		// 设置昵称
-		if len(input) <= len(SET_NAME) {
-			msg = "请输入你要设置的昵称😠"
-			break
+		case input == RANK:
+			// 签到的积分排名
+			msg = command.Rank()
+
+		case strings.HasPrefix(input, SET_NAME):
+			// 设置昵称
+			if len(input) <= len(SET_NAME) {
+				msg = "请输入你要设置的昵称😠"
+				break
+			}
+			msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
+
+		case input == TALUO:
+			// 抽塔罗牌
+			FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
+			MsgType = dto.RichMediaMsg
+
+		case input == DAILY_LUCK:
+			// 今日运势
+			msg = command.LuckyDaily(data.Author.ID)
+		case len(input) == 0:
+			// 随机回复词条
+			msg = command.NullMsg()
+		default:
+			// TODO：接入 AI 大模型
+			msg = "收到：" + input
 		}
-		msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
-
-	case input == TALUO:
-		// 抽塔罗牌
-		FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
-		MsgType = dto.RichMediaMsg
-
-	case input == DAILY_LUCK:
-		// 今日运势
-		msg = command.LuckyDaily(data.Author.ID)
-	default:
-		// TODO：接入 AI 大模型
-		msg = "收到：" + input
+	} else {
+		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~"
 	}
-
 	// 此处返回我们生成好的消息。
 	return &dto.MessageToCreate{
 		MsgType:   MsgType,
@@ -121,7 +133,7 @@ func MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 }
 
 // 发送回复，这里直接用的 qq 的 API 进行回复。
-func (p ProcessorImpl) sendGroupReply(ctx context.Context, groupID string, toCreate dto.APIMessage) error {
+func (p *ProcessorImpl) sendGroupReply(ctx context.Context, groupID string, toCreate dto.APIMessage) error {
 	log.Printf("EVENT ID:%v", toCreate.GetEventID())
 	if _, err := p.Api.PostGroupMessage(ctx, groupID, toCreate); err != nil {
 		log.Println(err)

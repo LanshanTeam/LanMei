@@ -8,6 +8,7 @@ require (
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/rs/zerolog v1.34.0
 	github.com/tencent-connect/botgo v0.2.1
+	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
 )
