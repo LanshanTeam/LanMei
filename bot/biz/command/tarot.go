@@ -11,7 +11,7 @@ func Tarot(qqId string, GroupId string) ([]byte, string) {
 	Select := r.Int() % 22
 	SelectMsg := r.Int() % 2
 	url := file.Array[Select]
-	msg := file.Words[Select][SelectMsg]
+	msg := "\n" + file.Words[Select][SelectMsg]
 	FileInfo, ok := file.FileData.Load(url)
 	if !ok {
 		file.Tasks <- GroupId

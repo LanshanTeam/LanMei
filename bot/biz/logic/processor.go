@@ -28,7 +28,7 @@ const (
 	NORMAL_SIGN = "/签到"
 	RANK        = "/排名"
 	SET_NAME    = "/设置昵称"
-	TALUO       = "/抽塔罗牌"
+	TAROT       = "/抽塔罗牌"
 	DAILY_LUCK  = "/今日运势"
 )
 
@@ -55,8 +55,7 @@ func genErrMessage(data dto.Message, err error) *dto.MessageToCreate {
 // ProcessGroupMessage 回复群消息
 func (p *ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMessageData) error {
 	llog.Info("@事件触发！")
-	var msg *dto.MessageToCreate
-	msg = p.MessageProcess(input, dto.Message(*data))
+	msg := p.MessageProcess(input, dto.Message(*data))
 	if err := p.sendGroupReply(context.Background(), data.GroupID, msg); err != nil {
 		_ = p.sendGroupReply(context.Background(), data.GroupID, genErrMessage(dto.Message(*data), err))
 	}
@@ -97,7 +96,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			}
 			msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
 
-		case input == TALUO:
+		case input == TAROT:
 			// 抽塔罗牌
 			FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
 			MsgType = dto.RichMediaMsg
