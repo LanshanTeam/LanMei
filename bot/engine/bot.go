@@ -1,26 +1,20 @@
 package engine
 
 import (
+	"LanMei/bot/biz/command"
 	"LanMei/bot/biz/handler"
 	"LanMei/bot/biz/logic"
 	"LanMei/bot/config"
 	"LanMei/bot/utils/file"
 	"LanMei/bot/utils/llog"
 	"context"
-	"fmt"
-	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/tencent-connect/botgo"
 	"github.com/tencent-connect/botgo/event"
 	"github.com/tencent-connect/botgo/interaction/webhook"
 	"github.com/tencent-connect/botgo/token"
-)
-
-const (
-	host_ = "0.0.0.0"
-	port_ = 8080
-	path_ = "/v1"
 )
 
 func InitBotEngine() {
@@ -37,17 +31,25 @@ func InitBotEngine() {
 	// 初始化 openapi，正式环境
 	api := botgo.NewOpenAPI(credentials.AppID, tokenSource).WithTimeout(5 * time.Second).SetDebug(true)
 	logic.InitProcessor(api)
+	command.InitWordCloud()
 	// 注册处理函数
 	_ = event.RegisterHandlers(
 		// 群@机器人消息事件
 		handler.GroupATMessageEventHandler(),
 	)
-	go file.PrepareFile(api)
+	file.InitFileUploader(api)
+	go file.PrepareFile()
 	// 这里的 handler 用于配置 webhook 的回调验证，详见 qq 机器人开发文档。
-	http.HandleFunc(path_, func(writer http.ResponseWriter, request *http.Request) {
-		webhook.HTTPHandler(writer, request, credentials)
+	router := gin.Default()
+
+	router.Any("/v1", func(c *gin.Context) {
+		req := c.Request
+		res := c.Writer
+		webhook.HTTPHandler(res, req, credentials)
 	})
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", host_, port_), nil); err != nil {
-		llog.Fatal("setup server fatal:", err)
-	}
+
+	router.GET("/v1/file/:filename", func(c *gin.Context) {
+		file.FileStorageHandler(c.Writer, c.Request)
+	})
+	router.Run(":8080")
 }

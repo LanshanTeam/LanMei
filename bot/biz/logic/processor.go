@@ -30,6 +30,7 @@ const (
 	SET_NAME    = "/设置昵称"
 	TAROT       = "/抽塔罗牌"
 	DAILY_LUCK  = "/今日运势"
+	WCLOUD      = "/wcloud"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -104,11 +105,21 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		case input == DAILY_LUCK:
 			// 今日运势
 			msg = command.LuckyDaily(data.Author.ID)
+
 		case len(input) == 0:
 			// 随机回复词条
 			msg = command.NullMsg()
+
+		case input == WCLOUD:
+			FileInfo = command.WCloud(data.GroupID)
+			MsgType = dto.RichMediaMsg
+			msg = ""
+		case len(input) > 1000:
+			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~"
+
 		default:
 			// TODO：接入 AI 大模型
+			command.StaticWords(input)
 			msg = "收到：" + input
 		}
 	} else {

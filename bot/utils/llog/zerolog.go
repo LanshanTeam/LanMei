@@ -55,6 +55,10 @@ func SetLogLevel(level int) {
 	}
 }
 
+func Println(v ...interface{}) {
+	logger.Println(v...)
+}
+
 func Info(msg string, v ...interface{}) {
 	logger.Info().Msg(msg + fmt.Sprint(v...))
 }

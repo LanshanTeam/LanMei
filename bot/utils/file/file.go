@@ -1,15 +1,21 @@
 package file
 
 import (
+	"LanMei/bot/config"
 	"LanMei/bot/utils/llog"
 	"context"
+	"encoding/base64"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/openapi"
 )
 
+// 从万神写的蓝妹里面复制的
 const (
 	TheFool           = "https://i0.hdslb.com/bfs/article/df310acdd2ee8ea7ab953d8e5aadcb03a3a91e2b.png"
 	TheMagician       = "https://i0.hdslb.com/bfs/article/93da381c563c2100930f98f017bf4dcfbe7692b6.png"
@@ -66,11 +72,22 @@ var (
 		Justice, TheHangedMan, Death, Temperance, TheDevil, TheTower, TheStar, TheMoon, TheSun, Judgement, TheWorld}
 )
 
+type FileUploaderImpl struct {
+	api openapi.OpenAPI
+}
+
 var Tasks chan string
 var FileData *sync.Map
 var FileExpire *sync.Map
+var FileUploader *FileUploaderImpl
 
-func PrepareFile(api openapi.OpenAPI) {
+func InitFileUploader(api openapi.OpenAPI) {
+	FileUploader = &FileUploaderImpl{
+		api: api,
+	}
+}
+
+func PrepareFile() {
 	FileData = &sync.Map{}
 	FileExpire = &sync.Map{}
 	Tasks = make(chan string, 100)
@@ -84,7 +101,7 @@ func PrepareFile(api openapi.OpenAPI) {
 				URL:        File,
 				SrvSendMsg: false,
 			}
-			res, err := api.PostGroupMessage(context.Background(), task, msg)
+			res, err := FileUploader.api.PostGroupMessage(context.Background(), task, msg)
 			if err != nil {
 				llog.Error("上传文件请求失败：", err)
 				continue
@@ -95,4 +112,31 @@ func PrepareFile(api openapi.OpenAPI) {
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
+}
+
+func UploadPicToFiledata(url string, groupId string) []byte {
+	msg := dto.RichMediaMessage{
+		FileType:   1,
+		URL:        url,
+		SrvSendMsg: false,
+	}
+
+	res, err := FileUploader.api.PostGroupMessage(context.Background(), groupId, msg)
+	if err != nil {
+		llog.Error("上传文件请求失败：", err)
+		return nil
+	}
+	return res.FileInfo
+}
+
+func UploadPicToUrl(picBase64 string) string {
+	imageData, err := base64.StdEncoding.DecodeString(string(picBase64))
+	if err != nil {
+		return ""
+	}
+	picName := fmt.Sprintf("%v.png", uuid.NewString())
+	picPath := "./data/wcloud/" + picName
+	os.WriteFile(picPath, imageData, os.FileMode(os.O_CREATE))
+
+	return fmt.Sprintf("https://%s/v1/file/%s", config.K.String("PublicIP"), picName)
 }
