@@ -7,6 +7,7 @@ import (
 	"LanMei/bot/config"
 	"LanMei/bot/utils/file"
 	"LanMei/bot/utils/llog"
+	"LanMei/bot/utils/sensitive"
 	"context"
 	"time"
 
@@ -38,6 +39,7 @@ func InitBotEngine() {
 		handler.GroupATMessageEventHandler(),
 	)
 	file.InitFileUploader(api)
+	sensitive.InitFilter()
 	go file.PrepareFile()
 	// 这里的 handler 用于配置 webhook 的回调验证，详见 qq 机器人开发文档。
 	router := gin.Default()

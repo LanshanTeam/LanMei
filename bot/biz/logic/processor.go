@@ -4,6 +4,7 @@ import (
 	"LanMei/bot/biz/command"
 	"LanMei/bot/utils/limiter"
 	"LanMei/bot/utils/llog"
+	"LanMei/bot/utils/sensitive"
 	"context"
 	"fmt"
 	"log"
@@ -69,7 +70,13 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 	var FileInfo []byte
 	MsgType := dto.TextMsg
 
-	if p.limiter.Allow(data.Author.ID) {
+	if !p.limiter.Allow(data.Author.ID) {
+		// 限流
+		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~"
+	} else if sensitive.HaveSensitive(input) {
+		// 敏感词
+		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
+	} else {
 		// 先看看是不是指令。
 		switch true {
 		case input == PING:
@@ -122,8 +129,6 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			command.StaticWords(input)
 			msg = "收到：" + input
 		}
-	} else {
-		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~"
 	}
 	// 此处返回我们生成好的消息。
 	return &dto.MessageToCreate{
