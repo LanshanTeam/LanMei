@@ -40,7 +40,6 @@ func InitBotEngine() {
 	)
 	file.InitFileUploader(api)
 	sensitive.InitFilter()
-	go file.PrepareFile()
 	// 这里的 handler 用于配置 webhook 的回调验证，详见 qq 机器人开发文档。
 	router := gin.Default()
 

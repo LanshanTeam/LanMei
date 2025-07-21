@@ -107,6 +107,10 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		case input == TAROT:
 			// 抽塔罗牌
 			FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
+			if FileInfo == nil {
+				msg = command.FailMsg()
+				break
+			}
 			MsgType = dto.RichMediaMsg
 
 		case input == DAILY_LUCK:

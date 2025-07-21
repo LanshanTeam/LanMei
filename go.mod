@@ -1,6 +1,6 @@
 module LanMei
 
-go 1.22.2
+go 1.24.5
 
 require (
 	github.com/bwmarrin/snowflake v0.3.0

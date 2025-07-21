@@ -76,44 +76,50 @@ type FileUploaderImpl struct {
 	api openapi.OpenAPI
 }
 
-var Tasks chan string
+type PicData struct {
+	FileInfo []byte
+	Expire   time.Time
+}
+
 var FileData *sync.Map
 var FileExpire *sync.Map
 var FileUploader *FileUploaderImpl
 
 func InitFileUploader(api openapi.OpenAPI) {
+	FileData = &sync.Map{}
 	FileUploader = &FileUploaderImpl{
 		api: api,
 	}
 }
 
-func PrepareFile() {
-	FileData = &sync.Map{}
-	FileExpire = &sync.Map{}
-	Tasks = make(chan string, 100)
-	for task := range Tasks {
-		for _, File := range Array {
-			if _, ok := FileData.Load(File); ok {
-				continue
-			}
-			msg := dto.RichMediaMessage{
-				FileType:   1,
-				URL:        File,
-				SrvSendMsg: false,
-			}
-			res, err := FileUploader.api.PostGroupMessage(context.Background(), task, msg)
-			if err != nil {
-				llog.Error("上传文件请求失败：", err)
-				continue
-			}
-			FileData.Store(File, res.FileInfo)
-			FileExpire.Store(File, time.Now().Add(time.Duration(res.TTL)*time.Second))
-			llog.Info("加载图片成功：", File)
-			time.Sleep(200 * time.Millisecond)
+// 上传文件，这里需要存储数据
+func UploadPicAndStore(URL string, GroupId string) []byte {
+	if Data, ok := FileData.Load(URL); ok {
+		data := Data.(*PicData)
+		if !time.Now().After(data.Expire) {
+			return data.FileInfo
 		}
 	}
+	msg := dto.RichMediaMessage{
+		FileType:   1,
+		URL:        URL,
+		SrvSendMsg: false,
+	}
+	res, err := FileUploader.api.PostGroupMessage(context.Background(), GroupId, msg)
+	if err != nil {
+		llog.Error("上传文件请求失败：", err)
+		return nil
+	}
+	data := &PicData{
+		FileInfo: res.FileInfo,
+		Expire:   time.Now().Add(time.Duration(res.TTL-1000) * time.Second),
+	}
+	FileData.Store(URL, data)
+	llog.Info("加载图片成功：", URL)
+	return res.FileInfo
 }
 
+// 不需要存储到哈希表的上传图片
 func UploadPicToFiledata(url string, groupId string) []byte {
 	msg := dto.RichMediaMessage{
 		FileType:   1,
