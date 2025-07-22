@@ -64,7 +64,7 @@ func (p *ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMes
 	return nil
 }
 
-// 生成回复消息。
+// MessageProcess 生成回复消息。
 func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.MessageToCreate {
 	var msg string
 	var FileInfo []byte

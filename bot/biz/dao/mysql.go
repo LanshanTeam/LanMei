@@ -26,7 +26,7 @@ var (
 	SFNode    *snowflake.Node
 )
 
-// 初始化 dao 层的 manager
+// InitDBManager 初始化 dao 层的 manager
 func InitDBManager() {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		config.K.String("Database.Mysql.User"),

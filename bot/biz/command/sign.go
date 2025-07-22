@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-// ping 命令，用于测试
+// PingCommand ping 命令，用于测试
 func PingCommand() string {
 	return "pong!"
 }
 
-// 试试手气的命令处理
+// Sign 试试手气的命令处理
 func Sign(qqId string, random bool) string {
 	point := 5
 	if random {
