@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +17,9 @@ func FileStorageHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath := "./data/wcloud/" + filename
+	// 确保文件名不包含路径分隔符，防止目录遍历攻击
+	filename = filepath.Base(filename)
+	filePath := filepath.Join("./data/wcloud", filename)
 	defer os.Remove(filePath)
 
 	file, err := os.Open(filePath)
