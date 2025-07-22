@@ -129,7 +129,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 
 		case strings.HasPrefix(input, INTRO):
 			// 部门介绍
-			msg = command.Intro(input[len(INTRO):])
+			msg = command.Intro(input[len(INTRO)+1:])
 
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~"
