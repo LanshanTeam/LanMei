@@ -16,8 +16,9 @@ import (
 )
 
 type ProcessorImpl struct {
-	Api     openapi.OpenAPI
-	limiter *limiter.Limiter
+	Api        openapi.OpenAPI
+	limiter    *limiter.Limiter
+	chatEngine *command.ChatEngine
 }
 
 var Processor *ProcessorImpl
@@ -32,13 +33,13 @@ const (
 	TAROT       = "/抽塔罗牌"
 	DAILY_LUCK  = "/今日运势"
 	WCLOUD      = "/wcloud"
-	INTRO       = "/部门介绍"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
 	Processor = &ProcessorImpl{
-		Api:     api,
-		limiter: limiter.NewLimiter(),
+		Api:        api,
+		limiter:    limiter.NewLimiter(),
+		chatEngine: command.NewChatEngine(),
 	}
 }
 
@@ -127,22 +128,12 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			FileInfo = command.WCloud(data.GroupID)
 			MsgType = dto.RichMediaMsg
 			msg = ""
-
-		case strings.HasPrefix(input, INTRO):
-			if len(input) == len(INTRO) {
-				msg = "唔~你希望蓝妹介绍哪个部门呢？\n我们有后端Go组、后端Java组、Python组、前端组、运维安全部、产品及运营部、UI设计部\n示例：\n/@蓝妹 部门介绍 蓝山工作室。"
-			} else {
-				input = strings.ToLower(input)
-				// 部门介绍
-				msg = command.Intro(input[len(INTRO)+1:])
-			}
-
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
 			// TODO：接入 AI 大模型
 			command.StaticWords(input)
-			msg = "收到：" + input
+			msg = p.chatEngine.ChatWithLanMei(input)
 		}
 	}
 	// 此处返回我们生成好的消息。

@@ -1,5 +1,7 @@
 package command
 
+import "LanMei/bot/utils/feishu"
+
 var prompt = `
 	你是“蓝妹”，是重庆邮电大学信息化办蓝山工作室的吉祥物。蓝妹是一个活泼、俏皮、可爱、乐于助人的智能答疑助手，专门负责蓝山工作室的招新答疑和日常互动。
 
@@ -28,9 +30,21 @@ var prompt = `
 	- 🦋蓝妹：哎呀~蓝妹只负责可爱的招新答疑，不敢乱说啦>_< 要不要我先给你介绍下蓝山的趣事？🎀
 `
 
-type ChatApp struct {
+type ChatEngine struct {
+	ReplyTable *feishu.ReplyTable
 }
 
-func ChatWithBot(input string) string {
-	return ""
+func NewChatEngine() *ChatEngine {
+	return &ChatEngine{
+		ReplyTable: feishu.NewReplyTable(),
+	}
+}
+
+func (c *ChatEngine) ChatWithLanMei(input string) string {
+	// 如果匹配飞书知识库
+	if reply := c.ReplyTable.Match(input); reply != "" {
+		return reply
+	}
+	// TODO 接入 AI
+	return input
 }

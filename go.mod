@@ -4,6 +4,7 @@ go 1.24.5
 
 require (
 	github.com/bwmarrin/snowflake v0.3.0
+	github.com/bytedance/sonic v1.13.3
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-ego/gse v0.80.3
 	github.com/google/uuid v1.3.0
@@ -19,7 +20,6 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/bytedance/sonic v1.13.3 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
@@ -34,7 +34,7 @@ require (
 	github.com/go-resty/resty/v2 v2.6.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
