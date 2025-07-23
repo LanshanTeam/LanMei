@@ -73,14 +73,14 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 
 	if !p.limiter.Allow(data.Author.ID) {
 		// 限流
-		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~"
+		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~o(≧口≦)o"
 	} else if sensitive.HaveSensitive(input) {
 		// 敏感词
 		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	} else {
 		// 先看看是不是指令。
 		switch true {
-		case input == PING:
+		case strings.ToLower(input) == PING:
 			// ping 一下
 			msg = command.PingCommand()
 
@@ -101,10 +101,11 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			// 设置昵称
 			if len(input) <= len(SET_NAME) {
 				msg = "请输入你要设置的昵称😠"
-				break
+			} else if len(input) >= len(SET_NAME)+30 {
+				msg = "名字太长啦！蓝妹记不住呢(┬┬﹏┬┬)"
+			} else {
+				msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
 			}
-			msg = command.SetName(data.Author.ID, input[len(SET_NAME)+1:])
-
 		case input == TAROT:
 			// 抽塔罗牌
 			FileInfo, msg = command.Tarot(data.Author.ID, data.GroupID)
@@ -122,7 +123,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			// 随机回复词条
 			msg = command.NullMsg()
 
-		case input == WCLOUD:
+		case strings.ToLower(input) == WCLOUD:
 			FileInfo = command.WCloud(data.GroupID)
 			MsgType = dto.RichMediaMsg
 			msg = ""
@@ -131,12 +132,13 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			if len(input) == len(INTRO) {
 				msg = "唔~你希望蓝妹介绍哪个部门呢？\n我们有后端Go组、后端Java组、Python组、前端组、运维安全部、产品及运营部、UI设计部\n示例：\n/@蓝妹 部门介绍 蓝山工作室。"
 			} else {
+				input = strings.ToLower(input)
 				// 部门介绍
 				msg = command.Intro(input[len(INTRO)+1:])
 			}
 
 		case len(input) > 1000:
-			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~"
+			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
 			// TODO：接入 AI 大模型
 			command.StaticWords(input)

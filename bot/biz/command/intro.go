@@ -19,6 +19,6 @@ func Intro(key string) string {
 	if value, ok := intro[key]; ok {
 		return value
 	} else {
-		return "抱歉～蓝妹暂时没找到相关信息呢,不过你可以看看蓝妹最最最喜欢的后端Go组简介:\n" + intro["后端Go组"]
+		return "抱歉～蓝妹暂时没找到相关信息呢,不过你可以看看蓝妹最最最喜欢的后端Go组简介:\n" + intro["后端go组"]
 	}
 }
