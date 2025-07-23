@@ -74,6 +74,10 @@ func InitSnowFlakeNode() {
 	}
 }
 
+func (m *DBManagerImpl) GetUserDefine(user *model.User) error {
+	return m.db.db.Where("qq_id = ?", user.QQId).First(&user).Error
+}
+
 func (m *DBManagerImpl) AddPoint(user *model.User, point int) error {
 	err := m.db.db.Where("qq_id = ?", user.QQId).First(&user).Error
 
