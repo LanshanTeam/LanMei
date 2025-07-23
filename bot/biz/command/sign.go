@@ -15,22 +15,65 @@ func PingCommand() string {
 	return "pong!"
 }
 
+type Event struct {
+	Template string   // 句子模板
+	Persons  []string // 人物
+	Acts     []string // 动作
+	Point    int      // 积分
+}
+
+var negativeEvents = []Event{
+	{
+		Template: "你被%s狠狠地%s了一顿，扣了%v分",
+		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
+		Acts:     []string{"欺负", "吐槽", "蛐蛐"},
+	},
+	{
+		Template: "你在和%s的%s中败下阵来，扣了%v分",
+		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
+		Acts:     []string{"辩论", "讨论"},
+	},
+	{
+		Template: "%s在背后对你进行了%s，你损失了%v分",
+		Persons:  []string{"同学", "朋友"},
+		Acts:     []string{"背刺", "吐槽", "打小报告", "挂校园墙"},
+	},
+}
+
+var positiveEvents = []Event{
+	{
+		Template: "你和%s一起%s，获得了%v分",
+		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
+		Acts:     []string{"原神", "三国杀", "鸣潮", "三角洲", "瓦", "Go", "运动", "学习", "讨论"},
+	},
+	{
+		Template: "%s偷偷给你%s，心里暖暖的，获得了%v分",
+		Persons:  []string{"舍友", "朋友", "暗恋对象"},
+		Acts:     []string{"塞了糖", "送早餐", "点了外卖"},
+	},
+	{
+		Template: "你和%s在食堂一起%s，聊得很开心，获得了%v分",
+		Persons:  []string{"朋友", "舍友", "学长", "学姐"},
+		Acts:     []string{"吃饭", "分享", "打饭"},
+	},
+}
+
 // Sign 试试手气的命令处理
 func Sign(qqId string, random bool) string {
 	point := 5
 	if random {
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		src := r.Int31() % 1000
-		addition := r.Intn(rand.Int())%5 - 2
+		addition := r.Intn(5) - 2
 		switch true {
-		case src < 10:
-			point = int(src%7+1) + addition
-		case src >= 10 && src < 800:
-			point = int(src%8+3) + addition
-		case src >= 800 && src < 980:
-			point = int(src%12+3) + addition
-		case src >= 980:
-			point = int(src%20+2) + addition
+		case src < 10: //1%
+			point = int(src%7+1) + addition //-1~9
+		case src >= 10 && src < 800: //79%
+			point = int(src%8+3) + addition //1~12
+		case src >= 800 && src < 980: //18%
+			point = int(src%12+3) + addition //1~16
+		case src >= 980: //%2
+			point = int(src%20+2) + addition //0
 		}
 	}
 	user := &model.User{
@@ -60,7 +103,7 @@ func Sign(qqId string, random bool) string {
 		llog.Debug("查询排名失败！")
 		rank = -1
 	}
-	response := fmt.Sprintf("\n签到成功，获得%v积分\n目前你积分为%v\n排名第%d位", point, user.Point+int64(point), rank)
+	response := fmt.Sprintf("\n签到成功，%v\n。目前你积分为%v\n排名第%d位", getEventByPoint(point), user.Point+int64(point), rank)
 	return response
 }
 
@@ -84,4 +127,20 @@ func SetName(qqId string, username string) string {
 		return "更新昵称失败，详情见日志"
 	}
 	return fmt.Sprintf("你的昵称已成功更新为：%v", username)
+}
+
+func getEventByPoint(point int) string {
+	var events []Event
+	if point >= 6 {
+		events = positiveEvents
+	} else {
+		events = negativeEvents
+	}
+
+	event := events[rand.Intn(len(events))]
+	person := event.Persons[rand.Intn(len(event.Persons))]
+	act := event.Acts[rand.Intn(len(event.Acts))]
+
+	eventStr := fmt.Sprintf(event.Template, person, act, point)
+	return eventStr
 }

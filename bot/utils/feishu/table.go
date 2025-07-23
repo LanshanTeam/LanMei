@@ -155,6 +155,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 			llog.Error("更新飞书知识库失败，读取请求返回数据错误：", err)
 			continue
 		}
+		res.Body.Close()
 		llog.Info(string(d))
 		sonic.Unmarshal(d, resp)
 		newReplyTable := make([]ReplyRow, 0)
@@ -180,7 +181,8 @@ func (rt *ReplyTable) RefreshReplyList() {
 				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
 			}
 		}
-		rt = (*ReplyTable)(&newReplyTable)
+		// 更新,直接覆盖
+		*rt = newReplyTable
 		time.Sleep(5 * time.Minute)
 	}
 }
@@ -217,7 +219,7 @@ type Updates struct {
 	UpdatedRows      int    `json:"updatedRows"`
 }
 
-// 标记错误的正则表达式为绿色
+// MarkInvalidRegexRow 标记错误的正则表达式为绿色
 func MarkInvalidRegexRow(sheetID string, ranges string, token string) {
 	style := TableStyle{AppendStyle: AppendStyle{
 		Range: fmt.Sprintf("%s!%s:%s", sheetID, ranges, ranges),
