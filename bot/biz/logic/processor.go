@@ -78,6 +78,10 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~o(≧口≦)o"
 	} else if sensitive.HaveSensitive(input) {
 		// 敏感词
+		err := p.retractMessage(context.Background(), data.GroupID, data.ID)
+		if err != nil {
+			llog.Error("撤回消息失败：", err)
+		}
 		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	} else {
 		// 先看看是不是指令。
@@ -161,6 +165,15 @@ func (p *ProcessorImpl) sendGroupReply(ctx context.Context, groupID string, toCr
 	log.Printf("EVENT ID:%v", toCreate.GetEventID())
 	if _, err := p.Api.PostGroupMessage(ctx, groupID, toCreate); err != nil {
 		log.Println(err)
+		return err
+	}
+	return nil
+}
+
+// 撤回消息
+func (p *ProcessorImpl) retractMessage(ctx context.Context, groupID string, messageID string) error {
+	if err := p.Api.RetractGroupMessage(ctx, groupID, messageID); err != nil {
+		log.Println("撤回消息失败：", err)
 		return err
 	}
 	return nil
