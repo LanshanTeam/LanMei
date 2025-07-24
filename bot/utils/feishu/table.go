@@ -216,7 +216,7 @@ type Updates struct {
 	UpdatedRows      int    `json:"updatedRows"`
 }
 
-// 标记错误的正则表达式为绿色
+// MarkInvalidRegexRow 标记错误的正则表达式为绿色
 func MarkInvalidRegexRow(sheetID string, ranges string, token string) {
 	style := TableStyle{AppendStyle: AppendStyle{
 		Range: fmt.Sprintf("%s!%s:%s", sheetID, ranges, ranges),
@@ -244,6 +244,7 @@ func MarkInvalidRegexRow(sheetID string, ranges string, token string) {
 		llog.Error("标记错误的正则表达式失败，请求错误：", err)
 		return
 	}
+	defer res.Body.Close()
 	resp := StyleResp{}
 	d, err := io.ReadAll(res.Body)
 	if err != nil {
