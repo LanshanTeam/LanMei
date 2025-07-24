@@ -237,11 +237,12 @@ func MarkInvalidRegexRow(sheetID string, ranges string, token string) {
 		llog.Error("标记错误的正则表达式失败：", err)
 	}
 	r.Header.Set("Content-Type", "application/json; charset=utf-8")
-	r.Header.Set("Authorization", GetToken())
+	r.Header.Set("Authorization", "Bearer "+GetToken())
 	c := http.Client{}
 	res, err := c.Do(r)
 	if err != nil {
 		llog.Error("标记错误的正则表达式失败，请求错误：", err)
+		return
 	}
 	resp := StyleResp{}
 	d, err := io.ReadAll(res.Body)
