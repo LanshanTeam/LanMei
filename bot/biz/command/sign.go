@@ -24,17 +24,17 @@ type Event struct {
 
 var negativeEvents = []Event{
 	{
-		Template: "你被%s狠狠地%s了一顿，扣了%v分",
+		Template: "你被%s狠狠地%s了一顿，扣除了%v积分",
 		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
 		Acts:     []string{"欺负", "吐槽", "蛐蛐"},
 	},
 	{
-		Template: "你在和%s的%s中败下阵来，扣了%v分",
+		Template: "你在和%s的%s中败下阵来，扣除了%v积分",
 		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
 		Acts:     []string{"辩论", "讨论"},
 	},
 	{
-		Template: "%s在背后对你进行了%s，你损失了%v分",
+		Template: "%s在背后对你进行了%s，你损失了%v积分",
 		Persons:  []string{"同学", "朋友"},
 		Acts:     []string{"背刺", "吐槽", "打小报告", "挂校园墙"},
 	},
@@ -42,17 +42,17 @@ var negativeEvents = []Event{
 
 var positiveEvents = []Event{
 	{
-		Template: "你和%s一起%s，获得了%v分",
+		Template: "你和%s一起%s，获得了%v积分",
 		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
 		Acts:     []string{"原神", "三国杀", "鸣潮", "三角洲", "瓦", "Go", "运动", "学习", "讨论"},
 	},
 	{
-		Template: "%s偷偷给你%s，心里暖暖的，获得了%v分",
+		Template: "%s偷偷给你%s，心里暖暖的，获得了%v积分",
 		Persons:  []string{"舍友", "朋友", "暗恋对象"},
 		Acts:     []string{"塞了糖", "送早餐", "点了外卖"},
 	},
 	{
-		Template: "你和%s在食堂一起%s，聊得很开心，获得了%v分",
+		Template: "你和%s在食堂一起%s，聊得很开心，获得了%v积分",
 		Persons:  []string{"朋友", "舍友", "学长", "学姐"},
 		Acts:     []string{"吃饭", "分享", "打饭"},
 	},
@@ -63,17 +63,16 @@ func Sign(qqId string, random bool) string {
 	point := 5
 	if random {
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		src := r.Int31() % 1000
-		addition := r.Intn(5) - 2
+		src := r.Int() % 1000
 		switch true {
-		case src < 10: //1%
-			point = int(src%7+1) + addition //-1~9
-		case src >= 10 && src < 800: //79%
-			point = int(src%8+3) + addition //1~12
-		case src >= 800 && src < 980: //18%
-			point = int(src%12+3) + addition //1~16
-		case src >= 980: //%2
-			point = int(src%20+2) + addition //0
+		case src < 8:
+			point = int(src%7) - 4 // 0.8% -4~3
+		case src >= 8 && src < 800:
+			point = int(src%4) + 3 // 79% 3~7
+		case src >= 800 && src < 980:
+			point = int(src%4) + 7 // 18% 7~11
+		case src >= 980:
+			point = int(src%4) + 11 // %2 11~15
 		}
 	}
 	user := &model.User{
@@ -131,9 +130,10 @@ func SetName(qqId string, username string) string {
 
 func getEventByPoint(point int) string {
 	var events []Event
-	if point >= 6 {
+	if point >= 0 {
 		events = positiveEvents
 	} else {
+		point = -point
 		events = negativeEvents
 	}
 
