@@ -91,7 +91,7 @@ func Sign(qqId string, random bool) string {
 			llog.Debug("查询排名失败！")
 			rank = -1
 		}
-		return fmt.Sprintf("\n今天已经签到过了，明天再来吧\n目前你积分为%v\n排名第%v位", user.Point, rank)
+		return fmt.Sprintf("\n今天已经签到过了，请明天再来吧~\n目前你积分为%v\n排名第%v位", user.Point, rank)
 	}
 	err = dao.DBManager.AddPoint(user, point)
 	if err != nil {
@@ -103,7 +103,7 @@ func Sign(qqId string, random bool) string {
 		llog.Debug("查询排名失败！")
 		rank = -1
 	}
-	response := fmt.Sprintf("\n签到成功，%v\n。目前你积分为%v\n排名第%d位", getEventByPoint(point), user.Point+int64(point), rank)
+	response := fmt.Sprintf("\n签到成功，%v。\n目前你积分为%v\n排名第%d位", getEventByPoint(point), user.Point+int64(point), rank)
 	return response
 }
 
