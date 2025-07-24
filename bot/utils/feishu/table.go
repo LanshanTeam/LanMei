@@ -143,7 +143,6 @@ func (rt *ReplyTable) RefreshReplyList() {
 		}
 		request.Header.Set("Content-Type", "application/json; charset=utf-8")
 		request.Header.Set("Authorization", "Bearer "+GetToken())
-		llog.Info("", request)
 		c := http.Client{}
 		res, err := c.Do(request)
 		if err != nil {
@@ -156,9 +155,8 @@ func (rt *ReplyTable) RefreshReplyList() {
 			llog.Error("更新飞书知识库失败，读取请求返回数据错误：", err)
 			continue
 		}
-		llog.Info(string(d))
 		sonic.Unmarshal(d, resp)
-		newReplyTable := make([]ReplyRow, 0)
+		newReplyTable := make(ReplyTable, 0)
 		for i, values := range resp.Data.ValueRange.Values[1:] {
 			if len(values) < 3 || values[0] == "" || values[1] == "" {
 				continue
@@ -181,8 +179,8 @@ func (rt *ReplyTable) RefreshReplyList() {
 				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
 			}
 		}
-		rt = (*ReplyTable)(&newReplyTable)
-		time.Sleep(5 * time.Minute)
+		*rt = newReplyTable
+		time.Sleep(30 * time.Second)
 	}
 }
 
