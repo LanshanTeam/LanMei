@@ -33,6 +33,7 @@ const (
 	TAROT       = "/抽塔罗牌"
 	DAILY_LUCK  = "/今日运势"
 	WCLOUD      = "/wcloud"
+	HISTODAY    = "/历史上的今天"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -128,6 +129,8 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			FileInfo = command.WCloud(data.GroupID)
 			MsgType = dto.RichMediaMsg
 			msg = ""
+		case input == HISTODAY:
+			msg = command.Histoday()
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
