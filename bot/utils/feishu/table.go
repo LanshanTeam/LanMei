@@ -142,7 +142,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 			continue
 		}
 		request.Header.Set("Content-Type", "application/json; charset=utf-8")
-		request.Header.Set("Authorization", GetToken())
+		request.Header.Set("Authorization", "Bearer "+GetToken())
 		c := http.Client{}
 		res, err := c.Do(request)
 		if err != nil {
@@ -155,16 +155,14 @@ func (rt *ReplyTable) RefreshReplyList() {
 			llog.Error("更新飞书知识库失败，读取请求返回数据错误：", err)
 			continue
 		}
-		res.Body.Close()
-		llog.Info(string(d))
 		sonic.Unmarshal(d, resp)
-		newReplyTable := make([]ReplyRow, 0)
+		newReplyTable := make(ReplyTable, 0)
 		for i, values := range resp.Data.ValueRange.Values[1:] {
 			if len(values) < 3 || values[0] == "" || values[1] == "" {
 				continue
 			}
 
-			switch values[3] {
+			switch values[2] {
 			case "全字匹配":
 				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
 			case "包含文字":
@@ -181,9 +179,8 @@ func (rt *ReplyTable) RefreshReplyList() {
 				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
 			}
 		}
-		// 更新,直接覆盖
 		*rt = newReplyTable
-		time.Sleep(5 * time.Minute)
+		time.Sleep(30 * time.Second)
 	}
 }
 
@@ -240,12 +237,14 @@ func MarkInvalidRegexRow(sheetID string, ranges string, token string) {
 		llog.Error("标记错误的正则表达式失败：", err)
 	}
 	r.Header.Set("Content-Type", "application/json; charset=utf-8")
-	r.Header.Set("Authorization", GetToken())
+	r.Header.Set("Authorization", "Bearer "+GetToken())
 	c := http.Client{}
 	res, err := c.Do(r)
 	if err != nil {
 		llog.Error("标记错误的正则表达式失败，请求错误：", err)
+		return
 	}
+	defer res.Body.Close()
 	resp := StyleResp{}
 	d, err := io.ReadAll(res.Body)
 	if err != nil {
