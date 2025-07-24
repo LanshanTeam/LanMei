@@ -142,7 +142,8 @@ func (rt *ReplyTable) RefreshReplyList() {
 			continue
 		}
 		request.Header.Set("Content-Type", "application/json; charset=utf-8")
-		request.Header.Set("Authorization", GetToken())
+		request.Header.Set("Authorization", "Bearer "+GetToken())
+		llog.Info("", request)
 		c := http.Client{}
 		res, err := c.Do(request)
 		if err != nil {
@@ -163,7 +164,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 				continue
 			}
 
-			switch values[3] {
+			switch values[2] {
 			case "全字匹配":
 				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
 			case "包含文字":
