@@ -38,7 +38,7 @@ func GetHistory() (text string) {
 	for i := range his {
 		lines[i] = fmt.Sprintf("%d. %s", i+1, his[i][1])
 	}
-	text = fmt.Sprintf("历史上的今天\n%s", strings.Join(lines, "\n"))
+	text = fmt.Sprintf("历史上的今天：\n%s", strings.Join(lines, "\n"))
 
 	return text
 }
