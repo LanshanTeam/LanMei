@@ -7,13 +7,15 @@ require (
 	github.com/bytedance/sonic v1.13.3
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-ego/gse v0.80.3
-	github.com/google/uuid v1.3.0
+	github.com/google/uuid v1.6.0
 	github.com/importcjj/sensitive v0.0.0-20200106142752-42d1c505be7b
 	github.com/knadh/koanf v1.5.0
 	github.com/redis/go-redis/v9 v9.11.0
 	github.com/rs/zerolog v1.34.0
 	github.com/tencent-connect/botgo v0.2.1
-	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
+	github.com/wujunwei928/edge-tts-go v0.0.0-20250315123430-d4675babeb96
+	github.com/youthlin/silk v0.0.4
+	golang.org/x/time v0.5.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/gorm v1.30.0
 )
@@ -31,10 +33,10 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.20.0 // indirect
-	github.com/go-resty/resty/v2 v2.6.0 // indirect
+	github.com/go-resty/resty/v2 v2.12.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
