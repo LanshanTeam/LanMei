@@ -123,7 +123,11 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 
 		case len(input) == 0:
 			// 随机回复词条
-			msg = command.NullMsg()
+			FileInfo, msg = command.NullMsg(data.GroupID)
+			if FileInfo == nil {
+				break
+			}
+			MsgType = dto.RichMediaMsg
 
 		case strings.ToLower(input) == WCLOUD:
 			FileInfo = command.WCloud(data.GroupID)
@@ -150,7 +154,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			IgnoreGetMessageError: true,
 		},
 		Media: &dto.MediaInfo{
-			FileInfo: []byte(FileInfo),
+			FileInfo: FileInfo,
 		},
 		MsgID: data.ID,
 	}

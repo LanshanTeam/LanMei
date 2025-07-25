@@ -92,7 +92,7 @@ func InitFileUploader(api openapi.OpenAPI) {
 	}
 }
 
-// 上传文件，这里需要存储数据
+// UploadPicAndStore 上传文件，这里需要存储数据
 func UploadPicAndStore(URL string, GroupId string) []byte {
 	if Data, ok := FileData.Load(URL); ok {
 		data := Data.(*PicData)
@@ -119,7 +119,7 @@ func UploadPicAndStore(URL string, GroupId string) []byte {
 	return res.FileInfo
 }
 
-// 不需要存储到哈希表的上传图片
+// UploadPicToFiledata 不需要存储到哈希表的上传图片
 func UploadPicToFiledata(url string, groupId string) []byte {
 	msg := dto.RichMediaMessage{
 		FileType:   1,

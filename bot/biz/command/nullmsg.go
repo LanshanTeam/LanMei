@@ -1,8 +1,58 @@
 package command
 
 import (
+	"LanMei/bot/utils/file"
 	"math/rand"
 	"time"
+)
+
+const (
+	emoji_1  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_1.png"
+	emoji_2  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_2.png"
+	emoji_3  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_3.png"
+	emoji_4  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_4.png"
+	emoji_5  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_5.png"
+	emoji_6  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_6.png"
+	emoji_7  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_7.png"
+	emoji_8  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_8.png"
+	emoji_9  = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_9.png"
+	emoji_10 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_10.png"
+	emoji_11 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_11.png"
+	emoji_12 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_12.png"
+	emoji_13 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_13.png"
+	emoji_14 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_14.png"
+	emoji_15 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_15.png"
+	emoji_16 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_16.png"
+	emoji_17 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_17.png"
+	emoji_18 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_18.png"
+	emoji_19 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_19.png"
+	emoji_20 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_20.png"
+	emoji_21 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_21.png"
+	emoji_22 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_22.png"
+	emoji_23 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_23.png"
+	emoji_24 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_24.png"
+	emoji_25 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_25.png"
+	emoji_26 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_26.png"
+	emoji_27 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_27.png"
+	emoji_28 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_28.png"
+	emoji_29 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_29.png"
+	emoji_30 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_30.png"
+	emoji_31 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_31.png"
+	emoji_32 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_32.png"
+	emoji_33 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_33.png"
+	emoji_34 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_34.png"
+	emoji_35 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_35.png"
+	emoji_36 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_36.png"
+	emoji_37 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_37.png"
+	emoji_38 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_38.png"
+	emoji_39 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_39.png"
+	emoji_40 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_40.png"
+	emoji_41 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_41.png"
+	emoji_42 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_42.png"
+	emoji_43 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_43.png"
+	emoji_44 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_44.png"
+	emoji_45 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_45.png"
+	emoji_46 = "https://raw.githubusercontent.com/Dao1023/zhihu-emoji/main/zhihu/emoji_46.png"
 )
 
 var RandomResponse = []string{
@@ -59,8 +109,20 @@ var RandomResponse = []string{
 	"你知道吗？蓝妹每次修改完代码后，就会做个小庆祝！🍰🍹 今天可能需要加个 emoji 反应一下心情~",
 }
 
-func NullMsg() string {
+var array = []string{
+	emoji_1, emoji_2, emoji_3, emoji_4, emoji_5, emoji_6, emoji_7, emoji_8,
+	emoji_9, emoji_10, emoji_11, emoji_12, emoji_13, emoji_14, emoji_15, emoji_16,
+	emoji_17, emoji_18, emoji_19, emoji_20, emoji_21, emoji_22, emoji_23, emoji_24,
+	emoji_25, emoji_26, emoji_27, emoji_28, emoji_29, emoji_30, emoji_31, emoji_32,
+	emoji_33, emoji_34, emoji_35, emoji_36, emoji_37, emoji_38, emoji_39, emoji_40,
+	emoji_41, emoji_42, emoji_43, emoji_44, emoji_45, emoji_46,
+}
+
+func NullMsg(GroupId string) ([]byte, string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	num := r.Int() % len(RandomResponse)
-	return RandomResponse[num]
+	Select := r.Int() % len(array)
+	url := array[Select]
+	FileInfo := file.UploadPicAndStore(url, GroupId)
+	return FileInfo, RandomResponse[num]
 }
