@@ -135,6 +135,21 @@ func UploadPicToFiledata(url string, groupId string) []byte {
 	return res.FileInfo
 }
 
+func UploadSilkToFiledata(url string, groupId string) []byte {
+	msg := dto.RichMediaMessage{
+		FileType:   3,
+		URL:        url,
+		SrvSendMsg: false,
+	}
+
+	res, err := FileUploader.api.PostGroupMessage(context.Background(), groupId, msg)
+	if err != nil {
+		llog.Error("上传文件请求失败：", err)
+		return nil
+	}
+	return res.FileInfo
+}
+
 func UploadPicToUrl(picBase64 string) string {
 	imageData, err := base64.StdEncoding.DecodeString(string(picBase64))
 	if err != nil {
@@ -145,4 +160,8 @@ func UploadPicToUrl(picBase64 string) string {
 	os.WriteFile(picPath, imageData, os.FileMode(os.O_CREATE))
 
 	return fmt.Sprintf("https://%s/v1/file/%s", config.K.String("PublicIP"), picName)
+}
+
+func UploadSilkToUrl(filename string) string {
+	return fmt.Sprintf("https://%s/v1/tts/%s", config.K.String("PublicIP"), filename)
 }

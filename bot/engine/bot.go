@@ -52,5 +52,8 @@ func InitBotEngine() {
 	router.GET("/v1/file/:filename", func(c *gin.Context) {
 		file.FileStorageHandler(c.Writer, c.Request)
 	})
+	router.GET("/v1/tts/:filename", func(c *gin.Context) {
+		file.TTSStorageHandler(c.Writer, c.Request)
+	})
 	router.Run(":8080")
 }
