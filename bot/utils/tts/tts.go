@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/wujunwei928/edge-tts-go/edge_tts"
 	"github.com/youthlin/silk"
@@ -52,46 +51,43 @@ func TTS(text, name string) string {
 
 // mp3ToSilk 使用 ffmpeg 将 MP3 解码为 PCM，再调用 silk.Encode 生成 SILK
 func mp3ToSilk(mp3Path, silkPath string) {
-	pcmPath := strings.TrimSuffix(silkPath, filepath.Ext(silkPath)) + ".pcm"
-
+	// ffmpeg 解码到 PCM，输出到 stdout
 	cmd := exec.Command("ffmpeg",
 		"-i", mp3Path,
 		"-f", "s16le",
 		"-ac", "1",
 		"-ar", "24000",
-		pcmPath,
+		"pipe:1",
 	)
+
+	pcmPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		llog.Error("获取 ffmpeg 输出管道失败:", err)
+		return
+	}
 
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		llog.Error("ffmpeg 转换 PCM 失败:", err, "stderr:", stderr.String())
+
+	if err = cmd.Start(); err != nil {
+		llog.Error("ffmpeg 启动失败:", err)
 		return
 	}
 
-	f, err := os.Open(pcmPath)
+	silkData, err := silk.Encode(pcmPipe)
 	if err != nil {
-		llog.Error("打开 PCM 文件失败:", err)
-		_ = os.Remove(pcmPath)
-		return
-	}
-	defer f.Close()
-
-	silkData, err := silk.Encode(f)
-	if err != nil {
-		llog.Error("SILK 编码失败:", err)
-		// 删除临时文件
-		_ = os.Remove(pcmPath)
+		cmd.Process.Kill()
+		llog.Info("SILK 编码失败:", err)
 		return
 	}
 
-	// 4. 删除临时 PCM 文件
-	if err := os.Remove(pcmPath); err != nil {
-		llog.Error("删除临时 PCM 文件失败:", err)
+	if err = cmd.Wait(); err != nil {
+		llog.Error("ffmpeg 处理失败:", err, "stderr:", stderr.String())
+		return
 	}
 
-	// 5. 写入最终的 .silk 文件
-	if err := os.WriteFile(silkPath, silkData, 0644); err != nil {
+	// 写入 .silk 文件
+	if err = os.WriteFile(silkPath, silkData, 0644); err != nil {
 		llog.Error("写入 SILK 文件失败:", err)
 		return
 	}
