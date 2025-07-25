@@ -80,18 +80,15 @@ func mp3ToSilk(mp3Path, silkPath string) {
 	silkData, err := silk.Encode(f)
 	if err != nil {
 		llog.Error("SILK 编码失败:", err)
-		// 删除临时文件
 		_ = os.Remove(pcmPath)
 		return
 	}
 
-	// 4. 删除临时 PCM 文件
-	if err := os.Remove(pcmPath); err != nil {
+	if err = os.Remove(pcmPath); err != nil {
 		llog.Error("删除临时 PCM 文件失败:", err)
 	}
 
-	// 5. 写入最终的 .silk 文件
-	if err := os.WriteFile(silkPath, silkData, 0644); err != nil {
+	if err = os.WriteFile(silkPath, silkData, 0644); err != nil {
 		llog.Error("写入 SILK 文件失败:", err)
 		return
 	}

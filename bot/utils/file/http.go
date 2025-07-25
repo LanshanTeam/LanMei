@@ -61,9 +61,7 @@ func TTSStorageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	buffer := make([]byte, 512)
-	n, _ := file.Read(buffer)
-	contentType := http.DetectContentType(buffer[:n])
+	contentType := "audio/silk"
 
 	file.Seek(0, io.SeekStart)
 
