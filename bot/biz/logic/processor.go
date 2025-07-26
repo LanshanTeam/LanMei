@@ -35,6 +35,7 @@ const (
 	WCLOUD      = "/wcloud"
 	//READ        = "/朗读"
 	// HISTODAY    = "/历史上的今天"
+	DAYSENTENCE = "/每日一句"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -136,6 +137,9 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		//	FileInfo = command.Read(input[len(READ)+1:], data.ID, data.GroupID)
 		//	MsgType = dto.RichMediaMsg
 		//	msg = ""
+		case input == DAYSENTENCE:
+			// 每日一句
+			msg = command.DaySentence()
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
