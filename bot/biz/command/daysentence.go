@@ -7,6 +7,8 @@ import (
 
 func DaySentence() string {
 	resp := daysentence.GetDaySentence()
-
-	return fmt.Sprintf("每日一句：%s\n出处：%s\n，作者：%v", resp.Hitokoto, resp.From, resp.FromWho)
+	if resp.FromWho == "" {
+		resp.FromWho = "未知"
+	}
+	return fmt.Sprintf("\n%s\n出处：《%s》，作者：%v", resp.Hitokoto, resp.From, resp.FromWho)
 }

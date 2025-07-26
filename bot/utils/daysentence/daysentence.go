@@ -2,24 +2,25 @@ package daysentence
 
 import (
 	"LanMei/bot/utils/llog"
-	"github.com/bytedance/sonic"
 	"io"
 	"net/http"
+
+	"github.com/bytedance/sonic"
 )
 
 type DaySentenceResp struct {
-	ID         int     `json:"id"`
-	UUID       string  `json:"uuid"`
-	Hitokoto   string  `json:"hitokoto"`
-	Type       string  `json:"type"`
-	From       string  `json:"from"`
-	FromWho    *string `json:"from_who"`
-	Creator    string  `json:"creator"`
-	CreatorUID int     `json:"creator_uid"`
-	Reviewer   int     `json:"reviewer"`
-	CommitFrom string  `json:"commit_from"`
-	CreatedAt  string  `json:"created_at"`
-	Length     int     `json:"length"`
+	ID         int    `json:"id"`
+	UUID       string `json:"uuid"`
+	Hitokoto   string `json:"hitokoto"`
+	Type       string `json:"type"`
+	From       string `json:"from"`
+	FromWho    string `json:"from_who"`
+	Creator    string `json:"creator"`
+	CreatorUID int    `json:"creator_uid"`
+	Reviewer   int    `json:"reviewer"`
+	CommitFrom string `json:"commit_from"`
+	CreatedAt  string `json:"created_at"`
+	Length     int    `json:"length"`
 }
 
 //a 动画
@@ -32,7 +33,6 @@ type DaySentenceResp struct {
 //h	影视
 //i	诗词
 //j	网易云
-//k	哲学
 //l	抖机灵
 
 var BaseURL = "https://v1.hitokoto.cn?c=a&c=b&c=d&c=i&c=j&c=k"

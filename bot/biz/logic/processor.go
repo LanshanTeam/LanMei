@@ -140,6 +140,9 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		case input == DAYSENTENCE:
 			// 每日一句
 			msg = command.DaySentence()
+			for sensitive.HaveSensitive(msg) {
+				msg = command.DaySentence()
+			}
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
@@ -148,6 +151,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			msg = p.chatEngine.ChatWithLanMei(input)
 		}
 	}
+
 	// 此处返回我们生成好的消息。
 	return &dto.MessageToCreate{
 		MsgType:   MsgType,
