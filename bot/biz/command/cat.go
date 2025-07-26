@@ -105,6 +105,12 @@ func GetHttpCat(input string, groupId string) []byte {
 		Select := r.Intn(len(HTTPCatURLs))
 		return file.UploadPicAndStore(HTTPCatURLs[Select], groupId)
 	} else {
-		return file.UploadPicAndStore(fmt.Sprintf("https://http.cat/%s.jpg", input), groupId)
+		url := fmt.Sprintf("https://http.cat/%s.jpg", input)
+		for _, v := range HTTPCatURLs {
+			if url == v {
+				return file.UploadPicAndStore(url, groupId)
+			}
+		}
+		return file.UploadPicAndStore("https://http.cat/404.jpg", groupId)
 	}
 }
