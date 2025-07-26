@@ -33,9 +33,10 @@ type DaySentenceResp struct {
 //h	影视
 //i	诗词
 //j	网易云
+//k	哲学
 //l	抖机灵
 
-var BaseURL = "https://v1.hitokoto.cn?c=a&c=b&c=d&c=i&c=j&c=k"
+var BaseURL = "https://v1.hitokoto.cn?c=a&c=b&c=d&c=i&c=j"
 
 func GetDaySentence() *DaySentenceResp {
 	r, err := http.NewRequest(http.MethodGet, BaseURL, nil)
