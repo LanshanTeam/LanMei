@@ -36,6 +36,7 @@ const (
 	//READ        = "/朗读"
 	// HISTODAY    = "/历史上的今天"
 	DAYSENTENCE = "/每日一句"
+	HTTPCAT     = "/猫猫"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -143,6 +144,10 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			for sensitive.HaveSensitive(msg) {
 				msg = command.DaySentence()
 			}
+		case strings.HasPrefix(input, HTTPCAT):
+			// 猫猫
+			FileInfo = command.GetHttpCat(input[len(HTTPCAT)+1:], data.GroupID)
+			MsgType = dto.RichMediaMsg
 		case len(input) > 1000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
