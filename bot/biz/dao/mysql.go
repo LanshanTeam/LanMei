@@ -28,10 +28,11 @@ var (
 
 // InitDBManager 初始化 dao 层的 manager
 func InitDBManager() {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
 		config.K.String("Database.Mysql.User"),
 		config.K.String("Database.Mysql.Password"),
-		config.K.String("Database.Mysql.Addr"),
+		config.K.String("Database.Mysql.Host"),
+		config.K.String("Database.Mysql.Port"),
 		config.K.String("Database.Mysql.DBName"),
 	)
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
@@ -40,7 +41,7 @@ func InitDBManager() {
 	}
 	// 初始化 redis
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     config.K.String("Database.Redis.Addr"),
+		Addr:     fmt.Sprintf("%s:%s", config.K.String("Database.Redis.Host"), config.K.String("Database.Redis.Port")),
 		Password: config.K.String("Database.Redis.Password"),
 		DB:       config.K.Int("Database.Redis.DB"),
 	})

@@ -16,7 +16,7 @@ var posSeg pos.Segmenter
 var wordClass = map[string]struct{}{"v": {}, "l": {}, "n": {}, "nr": {}, "a": {}, "vd": {}, "nz": {}, "PER": {}, "f": {}, "ns": {}, "LOC": {}, "s": {}, "nt": {}, "ORG": {}, "nw": {}, "vn": {}}
 
 func InitWordCloud() {
-	err := seg.LoadDict()
+	err := seg.LoadDict("./data/dict/s_1.txt", "./data/dict/t_1.txt")
 	if err != nil {
 		panic(err)
 	}

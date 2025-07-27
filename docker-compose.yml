@@ -1,21 +1,65 @@
+version: "3.8"
+
 services:
-    mysql:
-        image: mysql:8.0
-        container_name: mysql
-        restart: always
-        environment:
-            MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-            MYSQL_DATABASE: ${MYSQL_DATABASE}
-        ports:
-            - "3306:3306"
-        volumes:
-            - ./data/mysql/data:/var/lib/mysql:rw
-    redis:
-        image: redis:8.0.3
-        container_name: redis
-        restart: always
-        ports:
-        - "6379:6379"
-        volumes:
-        - ./data/redis_data:/data:rw
-        command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+  app:
+    build: .
+    container_name: app
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    networks:
+      - lanmei-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data/mysql/data:/var/lib/mysql:rw
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lanmei-network
+
+  redis:
+    image: redis:8.0.3
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis_data:/data:rw
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lanmei-network
+
+networks:
+  lanmei-network:
+    driver: bridge

@@ -157,6 +157,9 @@ func (rt *ReplyTable) RefreshReplyList() {
 		}
 		sonic.Unmarshal(d, resp)
 		newReplyTable := make(ReplyTable, 0)
+		if len(resp.Data.ValueRange.Values) <= 1 {
+			continue
+		}
 		for i, values := range resp.Data.ValueRange.Values[1:] {
 			if len(values) < 3 || values[0] == "" || values[1] == "" {
 				continue
