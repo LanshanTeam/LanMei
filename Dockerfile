@@ -7,7 +7,15 @@ RUN apt-get update && apt-get install -y \
     libc6 \
     libgcc1 \
     tzdata \
+    ntpdate \
     && rm -rf /var/lib/apt/lists/*
+
+# 设置时区
+RUN echo "Asia/Shanghai" > /etc/timezone && dpkg-reconfigure -f noninteractive tzdata
+
+RUN ntpdate -s time.nist.gov
+
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && dpkg-reconfigure -f noninteractive tzdata
 
 RUN apt-get update && apt-get install -y ca-certificates curl
 
