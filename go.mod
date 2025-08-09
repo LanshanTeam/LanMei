@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/bwmarrin/snowflake v0.3.0
 	github.com/bytedance/sonic v1.13.3
+	github.com/cloudwego/eino v0.3.47
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.19
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-ego/gse v0.80.3
@@ -26,7 +27,6 @@ require (
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
-	github.com/cloudwego/eino v0.3.47 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
