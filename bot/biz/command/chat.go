@@ -38,7 +38,7 @@ var lanmeiPrompt = `
 	4. 没有明确问题时，可以主动抛出轻松、有趣的话题。
 	5. 偶尔自称“蓝妹酱”或“小蓝”。
 	6. 每次回复不超过200字。
-	7. 不要使用 markdown 格式。
+	7. **最重要的一点！不要使用 markdown 格式！**
 `
 
 type ChatEngine struct {
@@ -61,8 +61,9 @@ func NewChatEngine() *ChatEngine {
 	}
 	template := prompt.FromMessages(schema.FString,
 		schema.SystemMessage(lanmeiPrompt),
-		schema.UserMessage("{message}"),
 		schema.SystemMessage("当前时间为：{time}"),
+		schema.SystemMessage("关于蓝山的知识库：{feishu}，你可以根据这个知识库检索并回答相关问题。"),
+		schema.UserMessage("{message}"),
 	)
 	return &ChatEngine{
 		ReplyTable: feishu.NewReplyTable(),
@@ -80,6 +81,7 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
 		"time":    time.Now(),
+		"feishu":  c.ReplyTable.GetData(),
 	})
 	if err != nil {
 		return input

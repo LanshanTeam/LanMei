@@ -6,7 +6,6 @@ import (
 	"LanMei/bot/utils/llog"
 	"LanMei/bot/utils/sensitive"
 	"context"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -49,9 +48,10 @@ func InitProcessor(api openapi.OpenAPI) {
 }
 
 func genErrMessage(data dto.Message, err error) *dto.MessageToCreate {
+	llog.Error("蓝妹出错了", err)
 	return &dto.MessageToCreate{
 		Timestamp: time.Now().UnixMilli(),
-		Content:   fmt.Sprintf("处理异常:%v", err),
+		Content:   "呜呜，蓝妹出错啦！快去后台看看吧~😭😭😭😭",
 		MessageReference: &dto.MessageReference{
 			// 引用这条消息
 			MessageID:             data.ID,
@@ -80,9 +80,6 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 	if !p.limiter.Allow(data.Author.ID) {
 		// 限流
 		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~o(≧口≦)o"
-	} else if sensitive.HaveSensitive(input) {
-		// 敏感词
-		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	} else {
 		// 先看看是不是指令。
 		switch true {
@@ -164,7 +161,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			}
 			MsgType = dto.RichMediaMsg
 
-		case len(input) > 1000:
+		case len(input) > 2000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"
 		default:
 			// TODO：接入 AI 大模型

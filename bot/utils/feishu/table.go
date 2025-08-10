@@ -19,6 +19,7 @@ type ReplyTable []ReplyRow
 type ReplyRow interface {
 	Match(words string) bool
 	Reply() string
+	GetData() [2]string
 }
 
 func NewReplyTable() *ReplyTable {
@@ -34,6 +35,14 @@ func (r *ReplyTable) Match(words string) string {
 		}
 	}
 	return ""
+}
+
+func (r *ReplyTable) GetData() [][2]string {
+	data := make([][2]string, 0)
+	for _, row := range *r {
+		data = append(data, row.GetData())
+	}
+	return data
 }
 
 type RegexRow struct {
@@ -62,6 +71,10 @@ func (r *RegexRow) Reply() string {
 	return r.reply
 }
 
+func (r *RegexRow) GetData() [2]string {
+	return [2]string{r.matchPattern.String(), r.reply}
+}
+
 type ContainRow struct {
 	containWords string
 	reply        string
@@ -84,6 +97,10 @@ func (c *ContainRow) Reply() string {
 	return c.reply
 }
 
+func (c *ContainRow) GetData() [2]string {
+	return [2]string{c.containWords, c.reply}
+}
+
 type EqualRow struct {
 	equalWords string
 	reply      string
@@ -104,6 +121,10 @@ func (m *EqualRow) Match(words string) bool {
 
 func (m *EqualRow) Reply() string {
 	return m.reply
+}
+
+func (m *EqualRow) GetData() [2]string {
+	return [2]string{m.equalWords, m.reply}
 }
 
 // ======== 以下为发起刷新请求的部分 =======
