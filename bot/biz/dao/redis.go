@@ -42,9 +42,10 @@ func (m *DBManagerImpl) MarkDayilyLuck(ctx context.Context, qqId string, sign in
 	return -1
 }
 
-func (m *DBManagerImpl) StaticWords(ctx context.Context, words map[string]int64) {
+func (m *DBManagerImpl) StaticWords(ctx context.Context, words map[string]int64, groupId string) {
+	key := fmt.Sprintf("worldcloud:%v", groupId)
 	for k, v := range words {
-		err := m.cacheDB.client.HIncrBy(ctx, "wordcloud", k, v).Err()
+		err := m.cacheDB.client.HIncrBy(ctx, key, k, v).Err()
 		if err != nil {
 			llog.Error("添加词条失败！", k, v)
 			continue
@@ -52,8 +53,9 @@ func (m *DBManagerImpl) StaticWords(ctx context.Context, words map[string]int64)
 	}
 }
 
-func (m *DBManagerImpl) GetWords(ctx context.Context) map[string]int64 {
-	res, err := m.cacheDB.client.HGetAll(ctx, "wordcloud").Result()
+func (m *DBManagerImpl) GetWords(ctx context.Context, groupId string) map[string]int64 {
+	key := fmt.Sprintf("worldcloud:%v", groupId)
+	res, err := m.cacheDB.client.HGetAll(ctx, key).Result()
 	if err != nil {
 		llog.Error("查询词库失败")
 		return nil

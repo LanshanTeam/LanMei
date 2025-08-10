@@ -23,7 +23,7 @@ func InitWordCloud() {
 	posSeg.WithGse(seg)
 }
 
-func StaticWords(sentence string) {
+func StaticWords(sentence string, groupId string) {
 	poss := posSeg.Cut(sentence, true)
 	words := make(map[string]int64)
 	for _, po := range poss {
@@ -35,11 +35,11 @@ func StaticWords(sentence string) {
 		}
 		words[po.Text]++
 	}
-	dao.DBManager.StaticWords(context.Background(), words)
+	dao.DBManager.StaticWords(context.Background(), words, groupId)
 }
 
 func WCloud(groupID string) []byte {
-	src := dao.DBManager.GetWords(context.Background())
+	src := dao.DBManager.GetWords(context.Background(), groupID)
 	picBase64 := rust_func.Wcloud(src)
 	url := file.UploadPicToUrl(picBase64)
 	filedata := file.UploadPicToFiledata(url, groupID)
