@@ -3,6 +3,7 @@ package command
 import (
 	"LanMei/bot/config"
 	"LanMei/bot/utils/feishu"
+	"LanMei/bot/utils/llog"
 	"context"
 	"time"
 
@@ -84,10 +85,12 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 		"feishu":  c.ReplyTable.GetData(),
 	})
 	if err != nil {
+		llog.Error("format message error: %v", err)
 		return input
 	}
 	msg, err := c.Model.Generate(context.Background(), in)
 	if err != nil {
+		llog.Error("generate message error: %v", err)
 		return input
 	}
 	return msg.Content
