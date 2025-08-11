@@ -14,22 +14,27 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-type ReplyTable []ReplyRow
-
+type ReplyTable struct {
+	ReplyRow  []ReplyRow
+	knowledge [][2]string
+}
 type ReplyRow interface {
 	Match(words string) bool
 	Reply() string
-	GetData() [2]string
 }
 
 func NewReplyTable() *ReplyTable {
-	r := make(ReplyTable, 0)
+	r := &ReplyTable{
+		ReplyRow:  make([]ReplyRow, 0),
+		knowledge: make([][2]string, 0),
+	}
+
 	go r.RefreshReplyList()
-	return &r
+	return r
 }
 
 func (r *ReplyTable) Match(words string) string {
-	for _, row := range *r {
+	for _, row := range r.ReplyRow {
 		if row.Match(words) {
 			return row.Reply()
 		}
@@ -37,12 +42,8 @@ func (r *ReplyTable) Match(words string) string {
 	return ""
 }
 
-func (r *ReplyTable) GetData() [][2]string {
-	data := make([][2]string, 0)
-	for _, row := range *r {
-		data = append(data, row.GetData())
-	}
-	return data
+func (r *ReplyTable) GetKnowledge() [][2]string {
+	return r.knowledge
 }
 
 type RegexRow struct {
@@ -71,10 +72,6 @@ func (r *RegexRow) Reply() string {
 	return r.reply
 }
 
-func (r *RegexRow) GetData() [2]string {
-	return [2]string{r.matchPattern.String(), r.reply}
-}
-
 type ContainRow struct {
 	containWords string
 	reply        string
@@ -95,10 +92,6 @@ func (c *ContainRow) Match(words string) bool {
 
 func (c *ContainRow) Reply() string {
 	return c.reply
-}
-
-func (c *ContainRow) GetData() [2]string {
-	return [2]string{c.containWords, c.reply}
 }
 
 type EqualRow struct {
@@ -177,7 +170,10 @@ func (rt *ReplyTable) RefreshReplyList() {
 			continue
 		}
 		sonic.Unmarshal(d, resp)
-		newReplyTable := make(ReplyTable, 0)
+		newReplyTable := &ReplyTable{
+			ReplyRow:  make([]ReplyRow, 0),
+			knowledge: make([][2]string, 0),
+		}
 		if len(resp.Data.ValueRange.Values) <= 1 {
 			continue
 		}
@@ -188,9 +184,9 @@ func (rt *ReplyTable) RefreshReplyList() {
 
 			switch values[2] {
 			case "全字匹配":
-				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
+				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, NewEqualRow(values[0], values[1]))
 			case "包含文字":
-				newReplyTable = append(newReplyTable, NewContainRow(values[0], values[1]))
+				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, NewContainRow(values[0], values[1]))
 			case "正则表达式":
 				r, err := NewRegexRow(values[0], values[1])
 				if err != nil {
@@ -198,12 +194,14 @@ func (rt *ReplyTable) RefreshReplyList() {
 					MarkInvalidRegexRow(config.K.String("feishu.SheetId"), fmt.Sprintf("A%d", i+2), GetToken())
 					continue
 				}
-				newReplyTable = append(newReplyTable, r)
+				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, r)
+			case "AI检索":
+				newReplyTable.knowledge = append(newReplyTable.knowledge, [2]string{values[0], values[1]})
 			default:
-				newReplyTable = append(newReplyTable, NewEqualRow(values[0], values[1]))
+				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, NewEqualRow(values[0], values[1]))
 			}
 		}
-		*rt = newReplyTable
+		*rt = *newReplyTable
 		time.Sleep(30 * time.Second)
 	}
 }

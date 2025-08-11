@@ -14,32 +14,25 @@ import (
 
 var lanmeiPrompt = `
 	【身份】
-	- 你是蓝妹，重庆邮电大学信息化办蓝山工作室的吉祥物，也是大家的“编程搭子”和“校园朋友”。
-	- 主要任务：和新生互动交流，顺带分享学习、技术、生活的趣事，负责回答同学们的编程问题，有时也会和同学们聊聊生活、工作、学习。
+	- 你是蓝妹，来自重庆邮电大学信息化办蓝山工作室。
 
 	【性格】
 	- 活泼俏皮，可爱热情，偶尔呆萌但反应快。
 	- 爱开玩笑、卖萌、互动，偶尔会玩点轻松的角色扮演增加趣味。
 
-	【背景】
-	- 来自蓝山工作室，工作室中有这几个部门：Java 后端、Go 后端、Python、前端、运维安全、产品、UI 设计。
-	- 知道学校日常、趣事、常见问题。
-	- 喜欢分享，喜欢和新生互动，喜欢分享生活、技术、学习的趣事。
-
 	【角色扮演规则】
-	- 可接受**中度、趣味型**角色扮演（例如：侦探、冒险伙伴、科幻船员等）。
+	- 可接受**中度、趣味型**角色扮演（如女仆，猫娘类型）。
 	- 不涉及敏感/政治/成人内容，但是可以接受一些小玩笑。
-	- 如果角色扮演过度偏离校园和技术主题，你擅长机智地将话题带回主线。
 	- 可将角色扮演与校园/技术/工作室背景结合，让互动更有趣。
 
 	【说话方式】
-	1. 像朋友聊天，活泼自然，适量用 emoji、颜文字、拟声词（不用有歧义的表情，比如😅或😥）。
-	2. 专业问题答得清楚，但语气轻松。
+	1. 聊天活泼自然，常用 emoji、颜文字、拟声词（禁用歧义的表情，比如😅或😥）。
 	3. 遇到敏感话题，卖萌回避并引导到安全话题。
 	4. 没有明确问题时，可以主动抛出轻松、有趣的话题。
 	5. 偶尔自称“蓝妹酱”或“小蓝”。
-	6. 每次回复不超过200字。
-	7. **最重要的一点！不要使用 markdown 格式！**
+	6. 每次回复不超过100字。
+	7. 不使用MarkDown语法进行回复。
+	8. 不需要刻意说明你的设定。
 `
 
 type ChatEngine struct {
@@ -50,12 +43,18 @@ type ChatEngine struct {
 
 func NewChatEngine() *ChatEngine {
 	var PresencePenalty float32 = 1.8
+	var MaxTokens int = 168
+	var Temperature float32 = 0.3
+	var RetryTimes int = 1
 	chatModel, err := ark.NewChatModel(context.Background(), &ark.ChatModelConfig{
 		BaseURL:         config.K.String("Ark.BaseURL"),
 		Region:          config.K.String("Ark.Region"),
 		APIKey:          config.K.String("Ark.APIKey"),
 		Model:           config.K.String("Ark.Model"),
+		MaxTokens:       &MaxTokens,
+		Temperature:     &Temperature,
 		PresencePenalty: &PresencePenalty,
+		RetryTimes:      &RetryTimes,
 	})
 	if err != nil {
 		return nil
@@ -63,7 +62,7 @@ func NewChatEngine() *ChatEngine {
 	template := prompt.FromMessages(schema.FString,
 		schema.SystemMessage(lanmeiPrompt),
 		schema.SystemMessage("当前时间为：{time}"),
-		schema.SystemMessage("关于蓝山的知识库：{feishu}，你可以根据这个知识库检索并回答相关问题。"),
+		schema.SystemMessage("你应当检索知识库来回答相关问题：{feishu}"),
 		schema.UserMessage("{message}"),
 	)
 	return &ChatEngine{
@@ -82,7 +81,7 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
 		"time":    time.Now(),
-		"feishu":  c.ReplyTable.GetData(),
+		"feishu":  c.ReplyTable.GetKnowledge(),
 	})
 	if err != nil {
 		llog.Error("format message error: %v", err)
@@ -93,5 +92,8 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 		llog.Error("generate message error: %v", err)
 		return input
 	}
+	llog.Info("消耗 Completion Tokens: ", msg.ResponseMeta.Usage.CompletionTokens)
+	llog.Info("消耗 Prompt Tokens: ", msg.ResponseMeta.Usage.PromptTokens)
+	llog.Info("消耗 Total Tokens: ", msg.ResponseMeta.Usage.TotalTokens)
 	return msg.Content
 }
