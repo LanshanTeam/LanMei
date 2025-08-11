@@ -65,6 +65,9 @@ func genErrMessage(data dto.Message, err error) *dto.MessageToCreate {
 func (p *ProcessorImpl) ProcessGroupMessage(input string, data *dto.WSGroupATMessageData) error {
 	llog.Info("@事件触发！")
 	msg := p.MessageProcess(input, dto.Message(*data))
+	if msg == nil {
+		return nil
+	}
 	if err := p.sendGroupReply(context.Background(), data.GroupID, msg); err != nil {
 		_ = p.sendGroupReply(context.Background(), data.GroupID, genErrMessage(dto.Message(*data), err))
 	}
@@ -80,6 +83,9 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 	if !p.limiter.Allow(data.Author.ID) {
 		// 限流
 		msg = "唔...你刚刚说话太快了，蓝妹没有反应过来~o(≧口≦)o"
+	} else if p.limiter.Deduper.Check(data.ID) {
+		llog.Info("重复消息: ", input)
+		return nil
 	} else {
 		// 先看看是不是指令。
 		switch true {
