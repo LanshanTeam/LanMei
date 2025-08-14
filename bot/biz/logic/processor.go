@@ -177,9 +177,6 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 			msg = p.chatEngine.ChatWithLanMei(input)
 		}
 	}
-	if sensitive.HaveSensitive(msg) {
-		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
-	}
 	// 此处返回我们生成好的消息。
 	return &dto.MessageToCreate{
 		MsgType:   MsgType,

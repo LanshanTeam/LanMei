@@ -4,6 +4,7 @@ import (
 	"LanMei/bot/config"
 	"LanMei/bot/utils/feishu"
 	"LanMei/bot/utils/llog"
+	"LanMei/bot/utils/sensitive"
 	"context"
 	"time"
 
@@ -95,5 +96,9 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 	llog.Info("消耗 Completion Tokens: ", msg.ResponseMeta.Usage.CompletionTokens)
 	llog.Info("消耗 Prompt Tokens: ", msg.ResponseMeta.Usage.PromptTokens)
 	llog.Info("消耗 Total Tokens: ", msg.ResponseMeta.Usage.TotalTokens)
+	llog.Info("输出消息为：", msg.Content)
+	if sensitive.HaveSensitive(msg.Content) {
+		return "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
+	}
 	return msg.Content
 }
