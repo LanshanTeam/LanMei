@@ -44,7 +44,7 @@ var positiveEvents = []Event{
 	{
 		Template: "你和%s一起%s，获得了%v积分",
 		Persons:  []string{"同学", "舍友", "学长", "学姐", "朋友"},
-		Acts:     []string{"原神", "三国杀", "鸣潮", "三角洲", "瓦", "Go", "运动", "学习", "讨论"},
+		Acts:     []string{"原神", "三国杀", "鸣潮", "三角洲", "打瓦", "Go", "打篮球", "学习", "讨论代码"},
 	},
 	{
 		Template: "%s偷偷给你%s，心里暖暖的，获得了%v积分",
@@ -63,16 +63,16 @@ func Sign(qqId string, random bool) string {
 	point := 5
 	if random {
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		src := r.Int() % 1000
+		src := r.Int() % 1001
 		switch true {
-		case src < 8:
-			point = int(src%7) - 4 // 0.8% -4~3
-		case src >= 8 && src < 800:
-			point = int(src%4) + 3 // 79% 3~7
+		case src < 9:
+			point = int(src%9) - 4 // 0.9% -4~5
+		case src >= 9 && src < 800:
+			point = int(src%5) + 5 // 79.1% 5~9
 		case src >= 800 && src < 980:
-			point = int(src%4) + 7 // 18% 7~11
+			point = int(src%5) + 9 // 18% 9~14
 		case src >= 980:
-			point = int(src%4) + 11 // %2 11~15
+			point = int(src%5) + 11 // %2 11~16
 		}
 	}
 	user := &model.User{

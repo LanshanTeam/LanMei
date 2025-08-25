@@ -174,7 +174,7 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 		default:
 			// TODO：接入 AI 大模型
 			command.StaticWords(input, data.GroupID)
-			msg = p.chatEngine.ChatWithLanMei(input)
+			msg = p.chatEngine.ChatWithLanMei(input, data.Author.ID)
 		}
 	}
 	// 此处返回我们生成好的消息。

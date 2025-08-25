@@ -6,11 +6,13 @@ import (
 	"LanMei/bot/utils/llog"
 	"LanMei/bot/utils/sensitive"
 	"context"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 var lanmeiPrompt = `
@@ -36,17 +38,25 @@ var lanmeiPrompt = `
 	8. 不需要刻意说明你的设定。
 `
 
+const (
+	MaxHistory int = 10
+)
+
 type ChatEngine struct {
 	ReplyTable *feishu.ReplyTable
 	Model      *ark.ChatModel
 	template   *prompt.DefaultChatTemplate
+	History    *sync.Map
 }
 
 func NewChatEngine() *ChatEngine {
 	var PresencePenalty float32 = 1.8
-	var MaxTokens int = 168
+	var MaxTokens int = 250
 	var Temperature float32 = 0.3
 	var RetryTimes int = 1
+	var Thinking = &model.Thinking{
+		Type: model.ThinkingTypeEnabled,
+	}
 	chatModel, err := ark.NewChatModel(context.Background(), &ark.ChatModelConfig{
 		BaseURL:         config.K.String("Ark.BaseURL"),
 		Region:          config.K.String("Ark.Region"),
@@ -56,6 +66,7 @@ func NewChatEngine() *ChatEngine {
 		Temperature:     &Temperature,
 		PresencePenalty: &PresencePenalty,
 		RetryTimes:      &RetryTimes,
+		Thinking:        Thinking,
 	})
 	if err != nil {
 		return nil
@@ -64,25 +75,33 @@ func NewChatEngine() *ChatEngine {
 		schema.SystemMessage(lanmeiPrompt),
 		schema.SystemMessage("当前时间为：{time}"),
 		schema.SystemMessage("你应当检索知识库来回答相关问题：{feishu}"),
+		schema.UserMessage("消息记录：{history}"),
 		schema.UserMessage("{message}"),
 	)
 	return &ChatEngine{
 		ReplyTable: feishu.NewReplyTable(),
 		Model:      chatModel,
 		template:   template,
+		History:    &sync.Map{},
 	}
 }
 
-func (c *ChatEngine) ChatWithLanMei(input string) string {
+func (c *ChatEngine) ChatWithLanMei(input string, ID string) string {
 	// 如果匹配飞书知识库
 	if reply := c.ReplyTable.Match(input); reply != "" {
 		return reply
 	}
+	history, ok := c.History.Load(ID)
+	if !ok {
+		history = []schema.Message{}
+	}
+	History := history.([]schema.Message)
 	// TODO 接入 AI
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
 		"time":    time.Now(),
 		"feishu":  c.ReplyTable.GetKnowledge(),
+		"history": History,
 	})
 	if err != nil {
 		llog.Error("format message error: %v", err)
@@ -100,5 +119,21 @@ func (c *ChatEngine) ChatWithLanMei(input string) string {
 	if sensitive.HaveSensitive(msg.Content) {
 		return "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	}
+
+	// 短暂上下文存储
+	History = append(History, schema.Message{
+		Role:    schema.User,
+		Content: input,
+	})
+
+	History = append(History, schema.Message{
+		Role:    schema.Assistant,
+		Content: msg.Content,
+	})
+	for len(History) > MaxHistory {
+		History = History[1:]
+	}
+	c.History.Store(ID, History)
+
 	return msg.Content
 }
