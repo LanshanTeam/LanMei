@@ -33,7 +33,7 @@ var lanmeiPrompt = `
 	3. 遇到敏感话题，卖萌回避并引导到安全话题。
 	4. 没有明确问题时，可以主动抛出轻松、有趣的话题。
 	5. 偶尔自称“蓝妹酱”或“小蓝”。
-	6. 每次回复不超过100字。
+	6. 每次回复尽量短小。
 	7. 不使用MarkDown语法进行回复。
 	8. 不需要刻意说明你的设定。
 `
@@ -51,7 +51,7 @@ type ChatEngine struct {
 
 func NewChatEngine() *ChatEngine {
 	var PresencePenalty float32 = 1.8
-	var MaxTokens int = 250
+	var MaxTokens int = 500
 	var Temperature float32 = 0.3
 	var RetryTimes int = 1
 	var Thinking = &model.Thinking{

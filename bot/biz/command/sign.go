@@ -65,12 +65,12 @@ func Sign(qqId string, random bool) string {
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		src := r.Int() % 1001
 		switch true {
-		case src < 9:
-			point = int(src%9) - 4 // 0.9% -4~5
-		case src >= 9 && src < 800:
-			point = int(src%5) + 5 // 79.1% 5~9
+		case src < 20:
+			point = int(src%9) - 4 // 2% -4~4
+		case src >= 20 && src < 800:
+			point = int(src%4) + 4 // 78% 4~8
 		case src >= 800 && src < 980:
-			point = int(src%5) + 9 // 18% 9~14
+			point = int(src%5) + 8 // 18% 8~13
 		case src >= 980:
 			point = int(src%5) + 11 // %2 11~16
 		}
