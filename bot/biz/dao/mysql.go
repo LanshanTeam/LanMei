@@ -16,6 +16,7 @@ import (
 type DBManagerImpl struct {
 	db      *MysqlManagerImpl
 	cacheDB *RedisManagerImpl
+	embedDB *QdrantManagerImpl
 }
 type MysqlManagerImpl struct {
 	db *gorm.DB
@@ -56,6 +57,7 @@ func InitDBManager() {
 	DBManager = &DBManagerImpl{
 		db:      NewMysqlManager(db),
 		cacheDB: NewRedisManager(rdb),
+		embedDB: NewQdrantManager(),
 	}
 	db.AutoMigrate(&model.User{})
 }

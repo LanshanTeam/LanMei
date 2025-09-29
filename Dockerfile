@@ -1,3 +1,13 @@
+FROM golang:1.24.3 AS build
+
+WORKDIR /app
+
+COPY . .
+
+RUN GOOS=linux go build -o LanMei
+
+
+
 # 使用 Ubuntu 镜像作为基础镜像
 FROM ubuntu:latest
 

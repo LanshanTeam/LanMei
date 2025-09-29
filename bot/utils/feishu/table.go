@@ -16,7 +16,7 @@ import (
 
 type ReplyTable struct {
 	ReplyRow  []ReplyRow
-	knowledge [][2]string
+	knowledge []string
 }
 type ReplyRow interface {
 	Match(words string) bool
@@ -26,7 +26,7 @@ type ReplyRow interface {
 func NewReplyTable() *ReplyTable {
 	r := &ReplyTable{
 		ReplyRow:  make([]ReplyRow, 0),
-		knowledge: make([][2]string, 0),
+		knowledge: make([]string, 0),
 	}
 
 	go r.RefreshReplyList()
@@ -42,7 +42,7 @@ func (r *ReplyTable) Match(words string) string {
 	return ""
 }
 
-func (r *ReplyTable) GetKnowledge() [][2]string {
+func (r *ReplyTable) GetKnowledge() []string {
 	return r.knowledge
 }
 
@@ -172,7 +172,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 		sonic.Unmarshal(d, resp)
 		newReplyTable := &ReplyTable{
 			ReplyRow:  make([]ReplyRow, 0),
-			knowledge: make([][2]string, 0),
+			knowledge: make([]string, 0),
 		}
 		if len(resp.Data.ValueRange.Values) <= 1 {
 			continue
@@ -196,7 +196,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 				}
 				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, r)
 			case "AI检索":
-				newReplyTable.knowledge = append(newReplyTable.knowledge, [2]string{values[0], values[1]})
+				newReplyTable.knowledge = append(newReplyTable.knowledge, fmt.Sprintf("%s：%s", values[0], values[1]))
 			default:
 				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, NewEqualRow(values[0], values[1]))
 			}
