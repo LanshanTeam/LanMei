@@ -12,15 +12,6 @@ services:
         condition: service_healthy
     ports:
       - "8080:8080"
-    environment:
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: root
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
     networks:
       - lanmei-network
 
@@ -59,6 +50,35 @@ services:
       retries: 5
     networks:
       - lanmei-network
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    # Qdrant 默认就是把数据落在 /qdrant/storage 下，这里显式映射到本地磁盘
+    volumes:
+      - ./data/qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"   # HTTP API
+      - "6334:6334"   # gRPC
+    environment:
+      - QDRANT__SERVICE__API_KEY=${QDRANT_KEY}
+      # ==== 关键：磁盘优先，减少内存占用 ====
+      # 将 Payload（元数据）放磁盘，适合 2GB 内存机器
+      - QDRANT__STORAGE__ON_DISK_PAYLOAD=true
+      # 崩溃后尝试恢复
+      - QDRANT__STORAGE__ATTEMPT_RECOVERY=true
+      # 降低内存峰值（压缩 WAL 等），小机器更稳
+      - QDRANT__WAL__WAL_CAPACITY_MB=64
+      - QDRANT__WAL__WAL_SEGMENT_SIZE_MB=16
+      # 适度减少并行度，避免吃满内存
+      - QDRANT__SERVICE__GRPC_TIMEOUT_SEC=30
+    # === 可选：给容器设定内存上限，防止同机其他服务被挤爆 ===
+    networks:
+      - lanmei-network
+    deploy:
+      resources:
+        limits:
+          memory: 256M   # 1GB 给 Qdrant
 
 networks:
   lanmei-network:

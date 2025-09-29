@@ -9,14 +9,35 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bytedance/sonic"
 )
 
 type ReplyTable struct {
-	ReplyRow  []ReplyRow
-	knowledge [][2]string
+	mu *sync.Mutex
+
+	ReplyRow        []ReplyRow
+	knowledgeSource map[int]string
+	AlterKnowledge  []KeyValue
+	cond            *sync.Cond
+}
+
+func (rt *ReplyTable) Wait() []KeyValue {
+	rt.mu.Lock()
+	for len(rt.AlterKnowledge) == 0 {
+		rt.cond.Wait() // 必须在持锁状态下调用
+	}
+	changes := rt.AlterKnowledge
+	rt.AlterKnowledge = nil // 消费这批
+	rt.mu.Unlock()
+	return changes
+}
+
+type KeyValue struct {
+	Key   int
+	Value string
 }
 type ReplyRow interface {
 	Match(words string) bool
@@ -24,9 +45,13 @@ type ReplyRow interface {
 }
 
 func NewReplyTable() *ReplyTable {
+	mu := &sync.Mutex{}
 	r := &ReplyTable{
-		ReplyRow:  make([]ReplyRow, 0),
-		knowledge: make([][2]string, 0),
+		mu:              mu,
+		ReplyRow:        make([]ReplyRow, 0),
+		knowledgeSource: make(map[int]string, 0),
+		AlterKnowledge:  make([]KeyValue, 0),
+		cond:            sync.NewCond(mu),
 	}
 
 	go r.RefreshReplyList()
@@ -42,8 +67,8 @@ func (r *ReplyTable) Match(words string) string {
 	return ""
 }
 
-func (r *ReplyTable) GetKnowledge() [][2]string {
-	return r.knowledge
+func (r *ReplyTable) GetKnowledge() []KeyValue {
+	return r.AlterKnowledge
 }
 
 type RegexRow struct {
@@ -171,8 +196,9 @@ func (rt *ReplyTable) RefreshReplyList() {
 		}
 		sonic.Unmarshal(d, resp)
 		newReplyTable := &ReplyTable{
-			ReplyRow:  make([]ReplyRow, 0),
-			knowledge: make([][2]string, 0),
+			ReplyRow:        make([]ReplyRow, 0),
+			knowledgeSource: make(map[int]string, 0),
+			AlterKnowledge:  make([]KeyValue, 0),
 		}
 		if len(resp.Data.ValueRange.Values) <= 1 {
 			continue
@@ -196,12 +222,25 @@ func (rt *ReplyTable) RefreshReplyList() {
 				}
 				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, r)
 			case "AI检索":
-				newReplyTable.knowledge = append(newReplyTable.knowledge, [2]string{values[0], values[1]})
+				// 增量更新，基于飞书返回的数据是有序的，如果无序就不能这样干
+				newReplyTable.knowledgeSource[i] = fmt.Sprintf("%s：%s", values[0], values[1])
+				if newReplyTable.knowledgeSource[i] != rt.knowledgeSource[i] {
+					newReplyTable.AlterKnowledge = append(newReplyTable.AlterKnowledge, KeyValue{
+						Key:   i,
+						Value: newReplyTable.knowledgeSource[i],
+					})
+				}
 			default:
 				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, NewEqualRow(values[0], values[1]))
 			}
 		}
+		newReplyTable.mu = rt.mu
+		newReplyTable.cond = rt.cond
 		*rt = *newReplyTable
+		// 此处进行并发控制，一旦检测到有更新的数据，唤醒向量数据库进行更新
+		if len(rt.AlterKnowledge) > 0 {
+			rt.cond.Signal()
+		}
 		time.Sleep(30 * time.Second)
 	}
 }

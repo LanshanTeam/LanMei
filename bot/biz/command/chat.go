@@ -1,6 +1,7 @@
 package command
 
 import (
+	"LanMei/bot/biz/dao"
 	"LanMei/bot/config"
 	"LanMei/bot/utils/feishu"
 	"LanMei/bot/utils/llog"
@@ -39,7 +40,7 @@ var lanmeiPrompt = `
 `
 
 const (
-	MaxHistory int = 10
+	MaxHistory int = 20
 )
 
 type ChatEngine struct {
@@ -69,6 +70,7 @@ func NewChatEngine() *ChatEngine {
 		Thinking:        Thinking,
 	})
 	if err != nil {
+		llog.Fatal("初始化大模型", err)
 		return nil
 	}
 	template := prompt.FromMessages(schema.FString,
@@ -78,8 +80,10 @@ func NewChatEngine() *ChatEngine {
 		schema.UserMessage("消息记录：{history}"),
 		schema.UserMessage("{message}"),
 	)
+	reply := feishu.NewReplyTable()
+	go dao.DBManager.UpdateEmbedding(context.Background(), dao.CollectionName, reply)
 	return &ChatEngine{
-		ReplyTable: feishu.NewReplyTable(),
+		ReplyTable: reply,
 		Model:      chatModel,
 		template:   template,
 		History:    &sync.Map{},
@@ -97,10 +101,12 @@ func (c *ChatEngine) ChatWithLanMei(input string, ID string) string {
 	}
 	History := history.([]schema.Message)
 	// TODO 接入 AI
+	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 25, input)
+	llog.Info("", msgs)
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
 		"time":    time.Now(),
-		"feishu":  c.ReplyTable.GetKnowledge(),
+		"feishu":  msgs,
 		"history": History,
 	})
 	if err != nil {
