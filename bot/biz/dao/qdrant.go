@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"time"
 
 	embed "github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/qdrant/go-client/qdrant"
@@ -97,13 +96,16 @@ func f64ToF32(vec []float64) ([]float32, error) {
 	return out, nil
 }
 
-func (m *QdrantManagerImpl) UpdateKnowledge(ctx context.Context, kl *feishu.ReplyTable, colletion string) {
-	datas := kl.GetKnowledge()
+func (m *QdrantManagerImpl) UpdateKnowledge(ctx context.Context, datas []feishu.KeyValue, colletion string) {
+	llog.Debug("", datas)
 	if len(datas) == 0 {
 		return
 	}
-
-	embeddings, err := m.embedder.EmbedStrings(ctx, datas)
+	strs := make([]string, 0, len(datas))
+	for _, data := range datas {
+		strs = append(strs, data.Value)
+	}
+	embeddings, err := m.embedder.EmbedStrings(ctx, strs)
 	if err != nil {
 		llog.Error("知识库向量化失败", err)
 		return
@@ -121,27 +123,20 @@ func (m *QdrantManagerImpl) UpdateKnowledge(ctx context.Context, kl *feishu.Repl
 			continue
 		}
 
-		id := uint64(i + 1)
-
 		payload := map[string]*qdrant.Value{
 			"text": qdrant.NewValueList(&qdrant.ListValue{
-				Values: []*qdrant.Value{qdrant.NewValueString(datas[i])},
+				Values: []*qdrant.Value{qdrant.NewValueString(datas[i].Value)},
 			}),
 		}
 
 		points = append(points, &qdrant.PointStruct{
-			Id:      qdrant.NewIDNum(id),
+			Id:      qdrant.NewIDNum(uint64(datas[i].Key)),
 			Vectors: qdrant.NewVectors(vecF32...),
 			Payload: payload,
 		})
 	}
 
 	if len(points) == 0 {
-		return
-	}
-	err = m.TruncateByScroll(ctx, colletion, 500)
-	if err != nil {
-		llog.Error("删除向量库数据失败", err)
 		return
 	}
 	_, err = m.client.Upsert(ctx, &qdrant.UpsertPoints{
@@ -298,7 +293,7 @@ func (m *DBManagerImpl) GetTopK(ctx context.Context, collection string, K uint64
 
 func (m *DBManagerImpl) UpdateEmbedding(ctx context.Context, collection string, feishu *feishu.ReplyTable) {
 	for {
-		m.embedDB.UpdateKnowledge(ctx, feishu, collection)
-		time.Sleep(30 * time.Second)
+		datas := feishu.Wait()
+		m.embedDB.UpdateKnowledge(ctx, datas, collection)
 	}
 }

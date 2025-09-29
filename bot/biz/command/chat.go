@@ -40,7 +40,7 @@ var lanmeiPrompt = `
 `
 
 const (
-	MaxHistory int = 10
+	MaxHistory int = 20
 )
 
 type ChatEngine struct {
@@ -101,7 +101,7 @@ func (c *ChatEngine) ChatWithLanMei(input string, ID string) string {
 	}
 	History := history.([]schema.Message)
 	// TODO 接入 AI
-	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 10, input)
+	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 25, input)
 	llog.Info("", msgs)
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
