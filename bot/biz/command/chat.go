@@ -5,6 +5,7 @@ import (
 	"LanMei/bot/config"
 	"LanMei/bot/utils/feishu"
 	"LanMei/bot/utils/llog"
+	"LanMei/bot/utils/rerank"
 	"LanMei/bot/utils/sensitive"
 	"context"
 	"sync"
@@ -48,6 +49,7 @@ type ChatEngine struct {
 	Model      *ark.ChatModel
 	template   *prompt.DefaultChatTemplate
 	History    *sync.Map
+	reranker   *rerank.Reranker
 }
 
 func NewChatEngine() *ChatEngine {
@@ -80,6 +82,11 @@ func NewChatEngine() *ChatEngine {
 		schema.UserMessage("消息记录：{history}"),
 		schema.UserMessage("{message}"),
 	)
+	reranker := rerank.NewReranker(
+		config.K.String("Infini.APIKey"),
+		config.K.String("Infini.Model"),
+		config.K.String("Infini.BaseURL"),
+	)
 	reply := feishu.NewReplyTable()
 	go dao.DBManager.UpdateEmbedding(context.Background(), dao.CollectionName, reply)
 	return &ChatEngine{
@@ -87,6 +94,7 @@ func NewChatEngine() *ChatEngine {
 		Model:      chatModel,
 		template:   template,
 		History:    &sync.Map{},
+		reranker:   reranker,
 	}
 }
 
@@ -100,8 +108,11 @@ func (c *ChatEngine) ChatWithLanMei(input string, ID string) string {
 		history = []schema.Message{}
 	}
 	History := history.([]schema.Message)
-	// TODO 接入 AI
-	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 25, input)
+	// 向量库初步匹配
+	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 50, input)
+	llog.Info("", msgs)
+	// rerank，即基于大模型过滤
+	msgs = c.reranker.TopN(10, msgs, input)
 	llog.Info("", msgs)
 	in, err := c.template.Format(context.Background(), map[string]any{
 		"message": input,
