@@ -39,7 +39,7 @@ type rerankResponse struct {
 
 type rerankResult struct {
 	Index          int             `json:"index"`
-	RelevanceScore float64         `json:"relavance_score"`
+	RelevanceScore float64         `json:"relevance_score"`
 	Document       *rerankDocument `json:"document,omitempty"`
 }
 
