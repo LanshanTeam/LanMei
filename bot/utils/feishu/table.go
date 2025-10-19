@@ -223,7 +223,7 @@ func (rt *ReplyTable) RefreshReplyList() {
 				newReplyTable.ReplyRow = append(newReplyTable.ReplyRow, r)
 			case "AI检索":
 				// 增量更新，基于飞书返回的数据是有序的，如果无序就不能这样干
-				newReplyTable.knowledgeSource[i] = fmt.Sprintf("%s：%s", values[0], values[1])
+				newReplyTable.knowledgeSource[i] = fmt.Sprintf("%s：%s\n", values[0], values[1])
 				if newReplyTable.knowledgeSource[i] != rt.knowledgeSource[i] {
 					newReplyTable.AlterKnowledge = append(newReplyTable.AlterKnowledge, KeyValue{
 						Key:   i,
