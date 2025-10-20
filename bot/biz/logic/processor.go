@@ -37,8 +37,6 @@ const (
 	DAYSENTENCE = "/每日一句"
 	HTTPCAT1    = "/猫猫"
 	HTTPCAT2    = "/哈基米"
-	WEATHER     = "/天气"
-	BALOGO      = "/logo"
 )
 
 func InitProcessor(api openapi.OpenAPI) {
@@ -168,27 +166,6 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 				FileInfo = command.GetHttpCat("", data.GroupID)
 			} else {
 				FileInfo = command.GetHttpCat(input[len(HTTPCAT2)+1:], data.GroupID)
-			}
-			MsgType = dto.RichMediaMsg
-
-		case strings.HasPrefix(input, WEATHER):
-			// 天气
-			if len(input) == len(WEATHER) {
-				msg = "请指定未来小时数哦～最大支持8小时呢~(●'◡'●)"
-			} else {
-				msg = command.Weather(input[len(WEATHER)+1:])
-				if msg == "" {
-					msg = command.FailMsg()
-				}
-			}
-
-		case strings.HasPrefix(input, BALOGO):
-			// 生成logo
-			parts := strings.SplitN(input[len(BALOGO)+1:], " ", 2)
-			if len(parts) != 2 {
-				msg = "请提供左右两部分文字哦~格式：/logo 左文字 右文字"
-			} else {
-				FileInfo = command.BALOGO(parts[0], parts[1])
 			}
 			MsgType = dto.RichMediaMsg
 
