@@ -44,7 +44,7 @@ func GetBALOGO(left, right string) string {
 	  ins[1].dispatchEvent(new Event('input', {bubbles:true}));
 	  return "ok";
 	})()`, left, right), nil),
-		chromedp.Sleep(1 * time.Second),
+		chromedp.Sleep(2 * time.Second),
 		chromedp.EvaluateAsDevTools(`(() => {
 	  const c = document.querySelector('canvas');
 	  return c ? c.toDataURL('image/png') : null;
