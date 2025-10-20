@@ -111,7 +111,7 @@ func (c *ChatEngine) ChatWithLanMei(input string, ID string) string {
 	// 向量库初步匹配
 	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 50, input)
 	llog.Info("", msgs)
-	// rerank，即基于大模型过滤
+	// rerank，即基于大模型重排
 	msgs = c.reranker.TopN(10, msgs, input)
 	llog.Info("", msgs)
 	in, err := c.template.Format(context.Background(), map[string]any{
