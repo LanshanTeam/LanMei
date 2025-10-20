@@ -1,14 +1,3 @@
-FROM golang:1.24.5 AS build
-
-WORKDIR /app
-
-COPY . .
-
-RUN GOOS=linux go build -o LanMei
-
-
-
-# 使用 Ubuntu 镜像作为基础镜像
 FROM ubuntu:latest
 
 # 设置国内的 apt 镜像源
@@ -52,7 +41,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-c
  && rm -rf /var/lib/apt/lists/*
 
 # 复制所有项目文件到容器中
-COPY --from=build . /server/
+COPY . /server/
 
 # 给可执行文件增加执行权限
 RUN chmod +x /server/LanMei
