@@ -189,8 +189,8 @@ func (p *ProcessorImpl) MessageProcess(input string, data dto.Message) *dto.Mess
 				msg = "请提供左右两部分文字哦~格式：/logo 左文字 右文字"
 			} else {
 				FileInfo = command.BALOGO(parts[0], parts[1], data.GroupID)
+				MsgType = dto.RichMediaMsg
 			}
-			MsgType = dto.RichMediaMsg
 
 		case len(input) > 2000:
 			msg = "哇~ 你是不是太着急啦？慢慢说，蓝妹在这里听着呢~(●'◡'●)"

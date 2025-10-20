@@ -1,4 +1,4 @@
-FROM golang:1.24.3 AS build
+FROM golang:1.24.5 AS build
 
 WORKDIR /app
 
@@ -37,20 +37,22 @@ RUN update-ca-certificates
 WORKDIR /server
 
 # ---------- 安装 Chrome ----------
-RUN mkdir -p /etc/apt/keyrings && \
-    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg && \
-    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
-      > /etc/apt/sources.list.d/google-chrome.list && \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
+ && chmod a+r /etc/apt/keyrings/google-chrome.gpg \
+ && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list \
+ && apt-get update && apt-get install -y --no-install-recommends \
       google-chrome-stable \
       fonts-noto-cjk \
       libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 \
       libxdamage1 libxi6 libxtst6 libglib2.0-0 libgtk-3-0 libpango-1.0-0 \
-      libcairo2 libdrm2 libgbm1 libasound2 \
-      && rm -rf /var/lib/apt/lists/*
+      libcairo2 libdrm2 libgbm1 libasound2t64 \
+ && rm -rf /var/lib/apt/lists/*
 
 # 复制所有项目文件到容器中
-COPY . /server/
+COPY --from=build . /server/
 
 # 给可执行文件增加执行权限
 RUN chmod +x /server/LanMei
