@@ -3,6 +3,7 @@ package ba_logo
 import (
 	"LanMei/bot/utils/llog"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,17 +16,10 @@ import (
 var baseurl = "https://lab.nulla.top/ba-logo"
 
 func GetBALOGO(left, right string) string {
-	// 1) 进程/渲染配置：视口固定、禁用 / 软件渲染兜底
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
-
-		// 如页面使用 WebGL，优先试“不开 --disable-gpu”；要纯软件渲染可以用 swiftshader：
-		// chromedp.Flag("use-angle", "swiftshader"),
-		// chromedp.Flag("use-gl", "swiftshader"),
-
-		// 统一视口（与命令行 --window-size 等效）
 		chromedp.WindowSize(1440, 900),
 	)
 	alloc, cancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -36,26 +30,16 @@ func GetBALOGO(left, right string) string {
 	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	// 2) 初始动作：导航 + 视口 DPR
 	var dataURL string
-	err := chromedp.Run(ctx, chromedp.Tasks{
+	if err := chromedp.Run(ctx, chromedp.Tasks{
 		chromedp.Navigate(baseurl),
 		chromedp.WaitVisible(`canvas`, chromedp.ByQuery),
 		emulation.SetDeviceMetricsOverride(1440, 900, 1.0, false),
-
-		// 3) 读取基线（改变前的画布指纹），用于后续对比，避免盲等
-		chromedp.EvaluateAsDevTools(`(() => {
-			const c = document.querySelector('canvas'); 
-			return c ? c.toDataURL('image/png').slice(0,128) : '';
-		})()`, &dataURL),
-	})
-	if err != nil {
+	}); err != nil {
 		llog.Error(err.Error())
 		return ""
 	}
-	baseline := dataURL // 先存一份
 
-	// 4) 安全注入文本：使用 strconv.Quote 防止引号/换行等字符把 JS 搞坏
 	jsSetInputs := fmt.Sprintf(`(() => {
 		const ins = document.querySelectorAll('input[type="text"]');
 		if (ins.length < 2) return "notfound";
@@ -68,7 +52,7 @@ func GetBALOGO(left, right string) string {
 
 	var setResult string
 	if err := chromedp.Run(ctx, chromedp.Tasks{
-		chromedp.EvaluateAsDevTools(jsSetInputs, &setResult),
+		chromedp.Evaluate(jsSetInputs, &setResult),
 	}); err != nil || setResult != "ok" {
 		if err != nil {
 			llog.Error("set inputs error: ", err.Error())
@@ -78,46 +62,77 @@ func GetBALOGO(left, right string) string {
 		return ""
 	}
 
-	// 5) 轮询等待 Canvas 真的变化（最多 ~5s），避免硬睡
-	var finalDataURL string
-	waitCanvasChanged := chromedp.ActionFunc(func(ctx context.Context) error {
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			if time.Now().After(deadline) {
-				return fmt.Errorf("canvas not updated before timeout")
+	if err := chromedp.Run(ctx, chromedp.Tasks{
+		chromedp.Evaluate(`(async () => {
+		  const c = document.querySelector('canvas');
+		  if (!c) return null;
+
+		  try { if (document.fonts && document.fonts.ready) { await document.fonts.ready; } } catch {}
+
+		  const ctx = c.getContext('2d');
+		  function hash() {
+			try {
+			  const w = c.width|0, h = c.height|0;
+			  if (!w || !h) return "";
+			  const d = ctx.getImageData(0,0,w,h).data;
+			  let hsh = 0;
+			  for (let i=0; i<d.length; i+=128) hsh = (hsh*131 + d[i])|0;
+			  return String(hsh);
+			} catch(e) {
+			  const u = c.toDataURL('image/png');
+			  return u ? u.slice(0,256) : "";
 			}
-			var cur string
-			if err := chromedp.EvaluateAsDevTools(`(() => {
-				const c = document.querySelector('canvas'); 
-				return c ? c.toDataURL('image/png') : '';
-			})()`, &cur).Do(ctx); err != nil {
-				return err
+		  }
+
+		  const stableNeeded = 10;
+		  const deadline = performance.now() + 8000;
+		  let prev = null, stable = 0;
+
+		  await new Promise(r => requestAnimationFrame(r));
+
+		  while (performance.now() < deadline) {
+			const cur = hash();
+			if (cur && cur === prev) {
+			  if (++stable >= stableNeeded) {
+				await new Promise(r => setTimeout(r, 1000)); // 稳定后再等 1s
+				const u = c.toDataURL('image/png');
+				return (u && u.startsWith('data:image/png;base64,')) ? u : null;
+			  }
+			} else {
+			  stable = 0; prev = cur;
 			}
-			if cur != "" && cur != "null" && cur[:min(128, len(cur))] != baseline {
-				finalDataURL = cur
-				return nil
+			await new Promise(r => requestAnimationFrame(r));
+		  }
+		  return null;
+		})()`, &dataURL),
+	}); err != nil {
+		llog.Error("wait stable evaluate:", err.Error())
+		return ""
+	}
+
+	if dataURL == "" || dataURL == "null" || !strings.HasPrefix(dataURL, "data:image/png;base64,") {
+		var pngBytes []byte
+		if err := chromedp.Run(ctx, chromedp.Tasks{
+			chromedp.Screenshot(`canvas`, &pngBytes, chromedp.ByQuery),
+		}); err != nil || len(pngBytes) == 0 {
+			if err != nil {
+				llog.Error("screenshot fallback error:", err.Error())
+			} else {
+				llog.Error("screenshot fallback empty")
 			}
-			time.Sleep(150 * time.Millisecond)
+			return ""
 		}
-	})
-
-	if err := chromedp.Run(ctx, waitCanvasChanged); err != nil {
-		llog.Error("wait change: ", err.Error())
-		return ""
+		return base64.StdEncoding.EncodeToString(pngBytes)
 	}
 
-	// 6) 拿到 dataURL，拆前缀
-	parts := strings.SplitN(finalDataURL, ",", 2)
+	parts := strings.SplitN(dataURL, ",", 2)
 	if len(parts) != 2 || parts[1] == "" {
-		llog.Error("未获取到: ", finalDataURL)
+		llog.Error("dataURL split error: ", dataURL[:min(128, len(dataURL))])
 		return ""
 	}
-
-	// parts[0] 形如 "data:image/png;base64"
 	return parts[1]
 }
 
-// 小工具：取最小值，避免切片越界
 func min(a, b int) int {
 	if a < b {
 		return a
