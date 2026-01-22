@@ -115,9 +115,8 @@ func (p *ProcessorImpl) MessageProcess(input string, ctx *zero.Ctx) string {
 			// 今日运势
 			msg = command.LuckyDaily(userID)
 
-		case len(input) == 0:
-			// 随机回复词条
-			msg = command.NullMsg()
+		case len(strings.TrimSpace(input)) == 0:
+			msg = ""
 
 		case strings.ToLower(input) == WCLOUD:
 			FileInfo = command.WCloud(groupID)
@@ -180,7 +179,7 @@ func (p *ProcessorImpl) MessageProcess(input string, ctx *zero.Ctx) string {
 		default:
 			// TODO：接入 AI 大模型
 			command.StaticWords(input, groupID)
-			msg = p.chatEngine.ChatWithLanMei(input, userID)
+			msg = p.chatEngine.ChatWithLanMei(ctx.Event.Sender.NickName, input, userID)
 		}
 	}
 	// 此处返回我们生成好的消息。

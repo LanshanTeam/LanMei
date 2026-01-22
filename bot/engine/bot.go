@@ -6,7 +6,6 @@ import (
 	"LanMei/bot/config"
 	"LanMei/bot/utils/file"
 	"LanMei/bot/utils/sensitive"
-	"math/rand"
 
 	"github.com/gin-gonic/gin"
 	zero "github.com/wdvxdr1123/ZeroBot"
@@ -21,10 +20,10 @@ func InitBotEngine() {
 
 	// 注册处理函数
 	zero.OnMessage(func(ctx *zero.Ctx) bool {
-		rand := rand.Intn(100)
-		if rand < 50 {
-			return true
-		}
+		// llog.Info("", ctx.Event.Sender)
+		// if ctx.Event.Sender.ID != 1130157066 {
+		// 	return true
+		// }
 		input := ctx.Event.Message.ExtractPlainText()
 		logic.Processor.ProcessMessage(input, ctx)
 
