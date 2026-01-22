@@ -2,8 +2,6 @@ package file
 
 import (
 	"LanMei/bot/config"
-	"LanMei/bot/utils/llog"
-	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
@@ -11,8 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/tencent-connect/botgo/dto"
-	"github.com/tencent-connect/botgo/openapi"
 )
 
 // 从万神写的蓝妹里面复制的
@@ -73,7 +69,7 @@ var (
 )
 
 type FileUploaderImpl struct {
-	api openapi.OpenAPI
+	api interface{}
 }
 
 type PicData struct {
@@ -85,7 +81,7 @@ var FileData *sync.Map
 var FileExpire *sync.Map
 var FileUploader *FileUploaderImpl
 
-func InitFileUploader(api openapi.OpenAPI) {
+func InitFileUploader(api interface{}) {
 	FileData = &sync.Map{}
 	FileUploader = &FileUploaderImpl{
 		api: api,
@@ -94,60 +90,19 @@ func InitFileUploader(api openapi.OpenAPI) {
 
 // 上传文件，这里需要存储数据
 func UploadPicAndStore(URL string, GroupId string) []byte {
-	if Data, ok := FileData.Load(URL); ok {
-		data := Data.(*PicData)
-		if !time.Now().After(data.Expire) {
-			return data.FileInfo
-		}
-	}
-	msg := dto.RichMediaMessage{
-		FileType:   1,
-		URL:        URL,
-		SrvSendMsg: false,
-	}
-	res, err := FileUploader.api.PostGroupMessage(context.Background(), GroupId, msg)
-	if err != nil {
-		llog.Error("上传文件请求失败：", err)
-		return nil
-	}
-	data := &PicData{
-		FileInfo: res.FileInfo,
-		Expire:   time.Now().Add(time.Duration(res.TTL-1000) * time.Second),
-	}
-	FileData.Store(URL, data)
-	llog.Info("加载图片成功：", URL)
-	return res.FileInfo
+	// TODO: 实现OneBot图片上传
+	return nil
 }
 
 // 不需要存储到哈希表的上传图片
 func UploadPicToFiledata(url string, groupId string) []byte {
-	msg := dto.RichMediaMessage{
-		FileType:   1,
-		URL:        url,
-		SrvSendMsg: false,
-	}
-
-	res, err := FileUploader.api.PostGroupMessage(context.Background(), groupId, msg)
-	if err != nil {
-		llog.Error("上传文件请求失败：", err)
-		return nil
-	}
-	return res.FileInfo
+	// TODO: 实现OneBot图片上传
+	return nil
 }
 
 func UploadSilkToFiledata(url string, groupId string) []byte {
-	msg := dto.RichMediaMessage{
-		FileType:   3,
-		URL:        url,
-		SrvSendMsg: false,
-	}
-
-	res, err := FileUploader.api.PostGroupMessage(context.Background(), groupId, msg)
-	if err != nil {
-		llog.Error("上传文件请求失败：", err)
-		return nil
-	}
-	return res.FileInfo
+	// TODO: 实现OneBot音频上传
+	return nil
 }
 
 func UploadPicToUrl(picBase64 string) string {

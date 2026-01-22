@@ -1,19 +1,15 @@
-version: "3.8"
-
 services:
   app:
     build: .
-    container_name: app
+    container_name: lanmei
     restart: always
     depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - mysql
+      - redis
     ports:
       - "8080:8080"
     networks:
-      - lanmei-network
+      - app-network
 
   mysql:
     image: mysql:8.0
@@ -26,13 +22,8 @@ services:
       - "3306:3306"
     volumes:
       - ./data/mysql/data:/var/lib/mysql:rw
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
     networks:
-      - lanmei-network
+      - app-network
 
   redis:
     image: redis:8.0.3
@@ -49,7 +40,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - lanmei-network
+      - app-network
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant
@@ -74,12 +65,43 @@ services:
       - QDRANT__SERVICE__GRPC_TIMEOUT_SEC=30
     # === 可选：给容器设定内存上限，防止同机其他服务被挤爆 ===
     networks:
-      - lanmei-network
+      - app-network
     deploy:
       resources:
         limits:
           memory: 256M   # 1GB 给 Qdrant
+  pmhq:
+    image: linyuchen/pmhq:7.0.6
+    container_name: pmhq
+    privileged: true
+    environment:
+      - ENABLE_HEADLESS=false
+    networks:
+      - app-network
+    volumes:
+      - qq_volume:/root/.config/QQ
+
+  llbot:
+    image: linyuchen/llbot:7.7.0
+    container_name: llonebot
+    ports:
+      - "3080:3080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PMHQ_HOST=pmhq
+      - WEBUI_PORT=3080
+    networks:
+      - app-network
+    volumes:
+      - qq_volume:/root/.config/QQ
+      - ./llbot_config:/app/llbot/data:rw
+    depends_on:
+      - pmhq
+
+volumes:
+  qq_volume:
 
 networks:
-  lanmei-network:
+  app-network:
     driver: bridge
