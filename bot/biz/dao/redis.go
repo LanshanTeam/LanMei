@@ -43,7 +43,7 @@ func (m *DBManagerImpl) MarkDayilyLuck(ctx context.Context, qqId string, sign in
 }
 
 func (m *DBManagerImpl) StaticWords(ctx context.Context, words map[string]int64, groupId string) {
-	key := fmt.Sprintf("worldcloud:%v", groupId)
+	key := fmt.Sprintf("wordcloud:%v", groupId)
 	for k, v := range words {
 		err := m.cacheDB.client.HIncrBy(ctx, key, k, v).Err()
 		if err != nil {
@@ -54,7 +54,7 @@ func (m *DBManagerImpl) StaticWords(ctx context.Context, words map[string]int64,
 }
 
 func (m *DBManagerImpl) GetWords(ctx context.Context, groupId string) map[string]int64 {
-	key := fmt.Sprintf("worldcloud:%v", groupId)
+	key := fmt.Sprintf("wordcloud:%v", groupId)
 	res, err := m.cacheDB.client.HGetAll(ctx, key).Result()
 	if err != nil {
 		llog.Error("查询词库失败")
@@ -66,4 +66,46 @@ func (m *DBManagerImpl) GetWords(ctx context.Context, groupId string) map[string
 		ans[k] = cnt
 	}
 	return ans
+}
+
+func (m *DBManagerImpl) HasJrlp(ctx context.Context, groupId int64, userId int64) bool {
+	key := fmt.Sprintf("jrlp:%v:%v:%v:qq", groupId, time.Now().Format("2006-01-02"), userId)
+	res, err := m.cacheDB.client.Exists(ctx, key).Result()
+	if err != nil {
+		return false
+	}
+	if res == 0 {
+		return false
+	}
+	return true
+}
+
+func (m *DBManagerImpl) SetJrlp(ctx context.Context, groupId int64, userId int64, lpId int64, msg string) {
+	qqkey := fmt.Sprintf("jrlp:%v:%v:%v:qq", groupId, time.Now().Format("2006-01-02"), userId)
+	err := m.cacheDB.client.Set(ctx, qqkey, lpId, 24*time.Hour).Err()
+	if err != nil {
+		llog.Error("设置今日老婆失败！", err)
+	}
+	msgKey := fmt.Sprintf("jrlp:%v:%v:%v:msg", groupId, time.Now().Format("2006-01-02"), userId)
+	err = m.cacheDB.client.Set(ctx, msgKey, msg, 24*time.Hour).Err()
+	if err != nil {
+		llog.Error("设置今日老婆消息失败！", err)
+	}
+}
+
+func (m *DBManagerImpl) GetJrlp(ctx context.Context, groupId int64, userId int64) (int64, string) {
+	qqkey := fmt.Sprintf("jrlp:%v:%v:%v:qq", groupId, time.Now().Format("2006-01-02"), userId)
+	res, err := m.cacheDB.client.Get(ctx, qqkey).Result()
+	if err != nil {
+		llog.Error("获取今日老婆失败！", err)
+		return 0, ""
+	}
+	msgKey := fmt.Sprintf("jrlp:%v:%v:%v:msg", groupId, time.Now().Format("2006-01-02"), userId)
+	msg, err := m.cacheDB.client.Get(ctx, msgKey).Result()
+	if err != nil {
+		llog.Error("获取今日老婆消息失败！", err)
+		return 0, ""
+	}
+	ans, _ := strconv.ParseInt(res, 10, 64)
+	return ans, msg
 }

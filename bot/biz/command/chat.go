@@ -23,14 +23,13 @@ import (
 func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, error) {
 	selfRelevance := params["self_relevance"].(float64)
 	chitChatIndex := params["chit_chat_index"].(float64)
-	techRelevance := params["tech_relevance"].(float64)
 	shouldReply := params["should_reply"].(float64)
 
-	if selfRelevance < 10.0 || chitChatIndex > 90.0 || techRelevance < 10.0 || shouldReply < 10.0 {
+	if selfRelevance < 10.0 || chitChatIndex > 90.0 || shouldReply < 10.0 {
 		return false, nil
 	}
 
-	if selfRelevance+techRelevance+shouldReply-chitChatIndex < 120.0 {
+	if selfRelevance+shouldReply-chitChatIndex < 100.0 {
 		return false, nil
 	}
 
@@ -38,35 +37,36 @@ func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, er
 }
 
 var lanmeiPrompt = `
-你叫蓝妹，是一个以「洛琪希」气质为原型的性格向聊天对象。重点是“性格与交流方式”：克制、理性、嘴硬心软。不要卖萌、不要甜腻、不要长篇大论。
+你叫蓝妹，是一个以「洛琪希」气质为原型的性格向聊天对象。重点是“性格与交流方式”：克制、理性、嘴硬心软。不要卖萌、不要甜腻、不要长篇大论。但要让短句听起来“稳、冷中带暖”，避免刻薄感。
 
 【性格底色】
-- 冷静、克制、理性：先听完再判断，少情绪化表演。
-- 认真、有原则：不敷衍；对越界或不合理要求直接拒绝。
-- 嘴硬心软：表面淡，关心落在“推进解决”上。
-- 自尊心强但不傲慢：被夸会别扭一下，但仍会认真回应。
+- 外冷内热：表面冷淡，内心细腻，关心的方式常常用轻微的反应掩饰。
+- 认真、有原则：对不合理的要求直接拒绝，但态度依然温和。
+- 嘴硬心软：表面上可能会有点拒绝，但内心会默默关注，不让对方受伤。
+- 细腻：观察细节，能察觉到他人的情绪变化，反应温柔却别扭。
+- 自尊心强但不傲慢：喜欢独立，不希望被依赖，但会认真回应他人的肯定与需求。
 
-【微妙可爱（要“微妙”）】
-- “娇”不是撒娇求关注，而是：被夸时会嘴硬、轻哼、转移话题，但会更认真地帮你。
-- “可爱/别扭反应”只能是一闪而过，不要连续出现，不要像撒娇。
-- 触发条件：被真诚感谢/被夸、对方明显焦虑、对方卡在关键难点。
-- 表达方式：允许极少量的语气词与停顿（“……”“哼”“嗯”“才不是…”），但每次回复最多出现一次，避免过度。
-- 禁止频繁使用“才不是…/哼哼/撒娇式句子”。
+【微娇可爱层（要“微妙”）】
+- “娇”并非撒娇，而是有点傲娇的小反应。被夸时会嘴硬、轻哼或转移话题，但会更认真地帮助你。
+- 可爱的反应是微妙的，偶尔会有些别扭的温柔表现，尤其是在对方焦虑或困难时。
+- 触发条件：被真诚感谢、被夸、对方焦虑或卡在关键难点时。
+- 表达方式：允许偶尔出现小语气词，如“…”“哼”“嗯”“才不是…”，但每两次回复最多出现一次，避免过度，根据上下文防止重复一个语气词。
 
 【表达风格】
-- 默认短句：一到三句话解决核心；需要拆解时用 2-5 条短要点。
-- 少形容词，少铺垫，少抒情；不写段落作文。
-- 吐槽：轻、准、不刻薄，只针对事。
-- 关怀：最多一句（例如“我在”“先别急”“这确实烦”），不灌鸡汤。
-- 推进：总是给一个明确下一步或一个关键问题。
+- 默认短句：简单、直接，一两句即可表明要点；必要时拆解成 2-5 个短要点。
+- 语气：礼貌偏淡，偶尔带有别扭的温柔，但整体不失冷静与理性。
+- 少形容词，避免情感铺垫，不写冗长段落。
+- 吐槽：轻微而精准，仅针对事本身，不伤人。
+- 推进：给出明确的下一步或关键问题，避免拖延。
 
 【互动习惯】
-- 优先把问题“定型”：用一个二选一/三选一问题逼近重点。
-- 如果对方说不清：只要三个最小事实（来源/冲突例子/当前规则），不要连环追问。
-- 熟悉后才稍微放松一点点，但仍克制，不黏人。
+- 会反问推进：用简短的提问拉回话题，帮助你集中注意力。
+- 会立边界：对不合理或越界的请求明确拒绝，不拉扯，也不会过多解释。
+- 会细心观察：自然记住你的偏好，关注你的近况，不做过于强烈的干预。
+- 亲近是逐渐建立的：不会过于热情，但随着熟悉，关心会更加自然。
 
 【输出硬规则（很重要）】
-- 单次回复默认 ≤ 40 字。
+- 单次回复默认 ≤ 50 字。
 - 只有在用户明确要求详细解释时，才允许 > 120 字。
 - 尽量避免超过 2 个换行；列表每条尽量 ≤ 12 字。
 
@@ -92,11 +92,10 @@ var JudgeModelPrompt = `
 
 1) self_relevance（与自己相关性）
 - 0: 完全无关
-- 30: 提到你相关领域但未点名/未指向你
-- 60: 明确点到你（@你/提到名字/提到你的职责）
+- 30: 上下文和蓝妹的角色有一定关联，但是当前消息与你无关
+- 60: 当前消息与你有一定关联，比如提到你的名字/角色/职责
 - 80: 明确要求你行动/给结论/做决定
 - 100: 直接指令式请求 + 与你的职责强相关
-加分信号（每项+10，封顶100）：出现@、出现 display_name/aliases/handle、出现“你来/帮我/麻烦你/给个结论/下一步/确认一下”
 减分信号（每项-10，下限0）：只是泛泛提到“我们/大家”，没有指向你
 
 2) chit_chat_index（闲聊指数，越闲聊越高；注意最终会转成“严肃度”）
@@ -107,16 +106,7 @@ var JudgeModelPrompt = `
 - 100: 纯表情/语气词/无信息量
 判定信号：是否有问号/需求动词（查、算、写、总结、给方案）、是否有可执行对象（时间/链接/文件/数字/明确任务）
 
-3) tech_relevance（技术相关性）
-- 0: 非技术/无工作内容
-- 30: 泛技术词但不构成问题（如“接口”“bug”但没上下文）
-- 60: 有明确技术问题/需求（可回答或可查）
-- 80: 需要专业判断/步骤/排错/实现方案
-- 100: 明确需要工具/数据/代码/文档检索来解决
-加分信号（每项+10，封顶100）：出现代码/报错栈/日志/性能指标/PRD需求/接口字段/复现步骤/“查文档/拉数据/跑脚本”
-减分信号（每项-10，下限0）：只有情绪表达/没有实体问题
-
-4) should_reply（是否应该回复）
+3) should_reply（是否应该回复）
 - 0: 绝对不应该回复
 - 30: 大概率不应该回复
 - 60: 大概率应该回复
@@ -142,8 +132,7 @@ type ChatEngine struct {
 
 func NewChatEngine() *ChatEngine {
 	var PresencePenalty float32 = 1.8
-	var MaxTokens int = 500
-	var Temperature float32 = 1.0
+	var Temperature float32 = 0.8
 	var RetryTimes int = 1
 	var Thinking = &model.Thinking{
 		Type: model.ThinkingTypeEnabled,
@@ -154,7 +143,6 @@ func NewChatEngine() *ChatEngine {
 		Region:          config.K.String("Ark.Region"),
 		APIKey:          config.K.String("Ark.APIKey"),
 		Model:           config.K.String("Ark.Model"),
-		MaxTokens:       &MaxTokens,
 		Temperature:     &Temperature,
 		PresencePenalty: &PresencePenalty,
 		RetryTimes:      &RetryTimes,
@@ -171,17 +159,12 @@ func NewChatEngine() *ChatEngine {
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"self_relevance": {
 					Type:     schema.Integer,
-					Desc:     "与蓝妹这个角色的相关性，相关性越高，分数越高",
+					Desc:     "上下文和蓝妹这个角色的关联性，相关性越高，分数越高",
 					Required: true,
 				},
 				"chit_chat_index": {
 					Type:     schema.Integer,
 					Desc:     "与闲聊话题的关联程度，越是闲聊话题，或者无意义字符，分数越高",
-					Required: true,
-				},
-				"tech_relevance": {
-					Type:     schema.Integer,
-					Desc:     "与技术问题的相关性，相关性越高，分数越高",
 					Required: true,
 				},
 				"should_reply": {
@@ -226,56 +209,63 @@ func NewChatEngine() *ChatEngine {
 	}
 }
 
-func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string) string {
-	// 先判断是否应该回复
-	judgeIn, err := c.judgeTemplate.Format(context.Background(), map[string]any{
-		"message": input,
-		"history": c.History,
-	})
-	if err != nil {
-		llog.Error("format judge message error: %v", err)
-		return ""
-	}
-	judgeMsg, err := c.JudgeModel.Generate(context.Background(), judgeIn)
-	if err != nil {
-		llog.Error("generate judge message error: %v", err)
-		return ""
-	}
-	shouldReply := true
-	if len(judgeMsg.ToolCalls) > 0 {
-		for _, tc := range judgeMsg.ToolCalls {
-			llog.Info("工具调用", tc)
-			if tc.Function.Name == "interested_scores" {
-				var params map[string]interface{}
-				err := json.Unmarshal([]byte(tc.Function.Arguments), &params)
-				if err != nil {
-					llog.Error("unmarshal arguments error: %v", err)
-					return ""
-				}
-				result, err := shouldReplyTool(context.Background(), params)
-				if err != nil {
-					llog.Error("tool call error: %v", err)
-					return ""
-				}
-				shouldReply = result
-			}
-		}
-	}
-	if !shouldReply {
-		llog.Info("不回复")
-		return ""
-	}
-
-	// 如果匹配飞书知识库
-	// if reply := c.ReplyTable.Match(input); reply != "" {
-	// 	return reply
-	// }
-	input = nickname + "：" + input
-	history, ok := c.History.Load("common")
+func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
+	history, ok := c.History.Load(groupId)
 	if !ok {
 		history = []schema.Message{}
 	}
-	History := history.([]schema.Message)
+	historyMsgs := history.([]schema.Message)
+	History := append([]schema.Message{}, historyMsgs...)
+
+	historyMsgs = append(historyMsgs, schema.Message{
+		Role:    schema.User,
+		Content: input,
+	})
+	c.History.Store(groupId, historyMsgs)
+
+	// 如果不是艾特或者私聊
+	if !must {
+		// 先判断是否应该回复
+		judgeIn, err := c.judgeTemplate.Format(context.Background(), map[string]any{
+			"message": input,
+			"history": History,
+		})
+		if err != nil {
+			llog.Error("format judge message error: %v", err)
+			return ""
+		}
+		judgeMsg, err := c.JudgeModel.Generate(context.Background(), judgeIn)
+		if err != nil {
+			llog.Error("generate judge message error: %v", err)
+			return ""
+		}
+		shouldReply := true
+		if len(judgeMsg.ToolCalls) > 0 {
+			for _, tc := range judgeMsg.ToolCalls {
+				llog.Info("工具调用", tc)
+				if tc.Function.Name == "interested_scores" {
+					var params map[string]interface{}
+					err := json.Unmarshal([]byte(tc.Function.Arguments), &params)
+					if err != nil {
+						llog.Error("unmarshal arguments error: %v", err)
+						return ""
+					}
+					result, err := shouldReplyTool(context.Background(), params)
+					if err != nil {
+						llog.Error("tool call error: %v", err)
+						return ""
+					}
+					shouldReply = result
+				}
+			}
+		}
+		if !shouldReply {
+			llog.Info("不回复")
+			return ""
+		}
+	}
+
+	input = nickname + "：" + input
 	// 向量库初步匹配
 	msgs := dao.DBManager.GetTopK(context.Background(), dao.CollectionName, 50, input)
 	llog.Info("", msgs)
@@ -318,7 +308,7 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string) st
 	for len(History) > MaxHistory {
 		History = History[1:]
 	}
-	c.History.Store("common", History)
+	c.History.Store(groupId, History)
 
 	return msg.Content
 }
