@@ -1,0 +1,20 @@
+[package]
+name = "wcloud"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+libc = "0.2"
+wcloud = { git = "https://github.com/jizizr/wcloud" }
+lazy_static = "1.5"
+rand = "0.8"
+image = { version = "0.25", default-features = false}
+base64 = "0.22"
+[build-dependencies]
+cbindgen = "0.26"
+[profile.release]
+lto = true
+panic = 'abort'
