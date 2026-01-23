@@ -19,23 +19,6 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
-// shouldReplyTool 工具函数
-func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, error) {
-	selfRelevance := params["self_relevance"].(float64)
-	chitChatIndex := params["chit_chat_index"].(float64)
-	shouldReply := params["should_reply"].(float64)
-
-	if selfRelevance < 10.0 || chitChatIndex > 90.0 || shouldReply < 10.0 {
-		return false, nil
-	}
-
-	if selfRelevance+shouldReply-chitChatIndex < 100.0 {
-		return false, nil
-	}
-
-	return true, nil
-}
-
 var lanmeiPrompt = `
 你叫蓝妹，是一个以「洛琪希」气质为原型的性格向聊天对象。重点是“性格与交流方式”：克制、理性、嘴硬心软。不要卖萌、不要甜腻、不要长篇大论。但要让短句听起来“稳、冷中带暖”，避免刻薄感。
 
@@ -207,6 +190,23 @@ func NewChatEngine() *ChatEngine {
 		History:       &sync.Map{},
 		reranker:      reranker,
 	}
+}
+
+// shouldReplyTool 工具函数
+func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, error) {
+	selfRelevance := params["self_relevance"].(float64)
+	chitChatIndex := params["chit_chat_index"].(float64)
+	shouldReply := params["should_reply"].(float64)
+
+	if selfRelevance < 10.0 || chitChatIndex > 90.0 || shouldReply < 10.0 {
+		return false, nil
+	}
+
+	if selfRelevance+shouldReply-chitChatIndex < 110.0 {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
