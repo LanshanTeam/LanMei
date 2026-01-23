@@ -6,14 +6,13 @@ import (
 	"time"
 )
 
-func Tarot(qqId string, GroupId string) ([]byte, string) {
+func Tarot() (string, string) {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	Select := r.Int() % len(file.Array)
 	SelectMsg := r.Int() % 2
 	url := file.Array[Select]
-	msg := "\n" + file.Words[Select][SelectMsg]
-	FileInfo := file.UploadPicAndStore(url, GroupId)
-	return FileInfo, msg
+	msg := file.Words[Select][SelectMsg]
+	return url, msg
 }
 
 var failMsgs = []string{

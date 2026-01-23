@@ -10,5 +10,5 @@ func DaySentence() string {
 	if resp.FromWho == "" {
 		resp.FromWho = "未知"
 	}
-	return fmt.Sprintf("\n%s\n出处：《%s》，作者：%v", resp.Hitokoto, resp.From, resp.FromWho)
+	return fmt.Sprintf("%s\n出处：%s，作者：%v", resp.Hitokoto, resp.From, resp.FromWho)
 }

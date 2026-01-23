@@ -89,9 +89,10 @@ func (m *DBManagerImpl) AddPoint(user *model.User, point int) error {
 		// 雪花算法生成 id
 		id := SFNode.Generate().Int64()
 		user := model.User{
-			ID:    id,
-			QQId:  user.QQId,
-			Point: int64(point),
+			ID:       id,
+			QQId:     user.QQId,
+			Username: user.Username,
+			Point:    int64(point),
 		}
 		res := m.db.db.Create(&user)
 		if res.Error != nil {
@@ -103,7 +104,8 @@ func (m *DBManagerImpl) AddPoint(user *model.User, point int) error {
 
 	// 已存在，加分
 	res := m.db.db.Model(&user).Updates(map[string]any{
-		"point": gorm.Expr("point + ?", point),
+		"point":    gorm.Expr("point + ?", point),
+		"username": user.Username,
 	})
 	if res.Error != nil {
 		llog.Error("更新失败", err)

@@ -114,7 +114,7 @@ func UploadPicToUrl(picBase64 string) string {
 	picPath := "./data/wcloud/" + picName
 	os.WriteFile(picPath, imageData, os.FileMode(os.O_CREATE))
 
-	return fmt.Sprintf("https://%s/v1/file/%s", config.K.String("PublicIP"), picName)
+	return fmt.Sprintf("http://%s/v1/file/%s", config.K.String("PublicIP"), picName)
 }
 
 func UploadSilkToUrl(filename string) string {
