@@ -1,6 +1,7 @@
 package command
 
 import (
+	"LanMei/bot/utils/file"
 	"fmt"
 	"math/rand"
 	"time"
@@ -98,18 +99,18 @@ var HTTPCatURLs = []string{
 	HTTP500, HTTP501, HTTP502, HTTP503, HTTP504, HTTP506, HTTP507, HTTP508, HTTP509, HTTP510, HTTP511, HTTP521, HTTP522, HTTP523, HTTP525, HTTP530, HTTP599,
 }
 
-func GetHttpCat(input string, groupId string) string {
+func GetHttpCat(input string, groupId string) []byte {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	if input == "" {
 		Select := r.Intn(len(HTTPCatURLs))
-		return HTTPCatURLs[Select]
+		return file.UploadPicAndStore(HTTPCatURLs[Select], groupId)
 	} else {
 		url := fmt.Sprintf("https://http.cat/%s.jpg", input)
 		for _, v := range HTTPCatURLs {
 			if url == v {
-				return url
+				return file.UploadPicAndStore(url, groupId)
 			}
 		}
-		return "https://http.cat/404.jpg"
+		return file.UploadPicAndStore("https://http.cat/404.jpg", groupId)
 	}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 func InitBotEngine() {
-	logic.NewProcessor()
+	logic.InitProcessor()
 	command.InitWordCloud()
 	file.InitFileUploader(nil) // TODO: 适配OneBot
 	sensitive.InitFilter()

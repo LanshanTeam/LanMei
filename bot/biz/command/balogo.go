@@ -5,8 +5,8 @@ import (
 	"LanMei/bot/utils/file"
 )
 
-func BALOGO(left, right string) string {
+func BALOGO(left, right, groupID string) []byte {
 	base64 := ba_logo.GetBALOGO(left, right)
 	url := file.UploadPicToUrl(base64)
-	return url
+	return file.UploadPicToFiledata(url, groupID)
 }

@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-
-	zero "github.com/wdvxdr1123/ZeroBot"
 )
 
 // PingCommand ping 命令，用于测试
@@ -61,7 +59,7 @@ var positiveEvents = []Event{
 }
 
 // Sign 试试手气的命令处理
-func Sign(ctx *zero.Ctx, qqId string, random bool) string {
+func Sign(qqId string, random bool) string {
 	point := 5
 	if random {
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -78,8 +76,7 @@ func Sign(ctx *zero.Ctx, qqId string, random bool) string {
 		}
 	}
 	user := &model.User{
-		QQId:     qqId,
-		Username: ctx.Event.Sender.NickName,
+		QQId: qqId,
 	}
 	err := dao.DBManager.MarkAsSigned(context.Background(), qqId)
 	if err != nil {

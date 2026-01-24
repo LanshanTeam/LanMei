@@ -38,8 +38,10 @@ func StaticWords(sentence string, groupId string) {
 	dao.DBManager.StaticWords(context.Background(), words, groupId)
 }
 
-func WCloud(groupID string) string {
+func WCloud(groupID string) []byte {
 	src := dao.DBManager.GetWords(context.Background(), groupID)
 	picBase64 := rust_func.Wcloud(src)
-	return file.UploadPicToUrl(picBase64)
+	url := file.UploadPicToUrl(picBase64)
+	filedata := file.UploadPicToFiledata(url, groupID)
+	return filedata
 }
