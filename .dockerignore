@@ -1,1 +1,3 @@
 *.log
+./example
+./llbot_config/

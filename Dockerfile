@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gnupg ca-c
 COPY . /server/
 
 # 给可执行文件增加执行权限
-RUN chmod +x /server/LanMei
+RUN chmod +x /server/lanmei
 
 # Chrome 可执行路径
 ENV CHROME_PATH=/usr/bin/google-chrome
@@ -54,4 +54,4 @@ ENV CHROME_PATH=/usr/bin/google-chrome
 EXPOSE 8080
 
 # 启动容器时运行的命令
-CMD [ "/server/LanMei" ]
+CMD [ "/server/lanmei" ]
