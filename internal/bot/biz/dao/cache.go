@@ -129,6 +129,31 @@ func (m *CacheManagerImpl) hgetAll(ctx context.Context, key string) (map[string]
 	return out, nil
 }
 
+func (m *CacheManagerImpl) hget(ctx context.Context, key string, field string) (int64, error) {
+	var item CacheHash
+	err := m.db.WithContext(ctx).
+		Where("cache_key = ? AND field = ?", key, field).
+		Take(&item).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return item.Value, nil
+}
+
+func (m *CacheManagerImpl) hset(ctx context.Context, key string, field string, value int64) error {
+	return m.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "cache_key"}, {Name: "field"}},
+		DoUpdates: clause.AssignmentColumns([]string{"value"}),
+	}).Create(&CacheHash{
+		CacheKey: key,
+		Field:    field,
+		Value:    value,
+	}).Error
+}
+
 func (m *DBManagerImpl) MarkAsSigned(ctx context.Context, qqId string) error {
 	date := time.Now().Format("2006-01-02")
 	key := fmt.Sprintf("sign:%v:%v", qqId, date)
@@ -172,6 +197,24 @@ func (m *DBManagerImpl) GetWords(ctx context.Context, groupId string) map[string
 		return nil
 	}
 	return res
+}
+
+func (m *DBManagerImpl) IncrJargonCount(ctx context.Context, groupId, term string) (int64, error) {
+	key := fmt.Sprintf("jargon_count:%v", groupId)
+	if err := m.cacheDB.hincrBy(ctx, key, term, 1); err != nil {
+		return 0, err
+	}
+	return m.cacheDB.hget(ctx, key, term)
+}
+
+func (m *DBManagerImpl) GetJargonLastInfer(ctx context.Context, groupId, term string) (int64, error) {
+	key := fmt.Sprintf("jargon_infer:%v", groupId)
+	return m.cacheDB.hget(ctx, key, term)
+}
+
+func (m *DBManagerImpl) SetJargonLastInfer(ctx context.Context, groupId, term string, value int64) error {
+	key := fmt.Sprintf("jargon_infer:%v", groupId)
+	return m.cacheDB.hset(ctx, key, term, value)
 }
 
 func (m *DBManagerImpl) HasJrlp(ctx context.Context, groupId int64, userId int64) bool {

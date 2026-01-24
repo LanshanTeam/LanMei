@@ -2,6 +2,7 @@ package logic
 
 import (
 	"LanMei/internal/bot/biz/command"
+	"LanMei/internal/bot/biz/llmchat"
 	"LanMei/internal/bot/biz/logic/default_plugins"
 	"LanMei/internal/bot/utils/limiter"
 	"LanMei/internal/bot/utils/llog"
@@ -15,7 +16,7 @@ import (
 type ProcessorImpl struct {
 	limiter    *limiter.Limiter
 	Plugins    []Plugin
-	chatEngine *command.ChatEngine
+	chatEngine *llmchat.ChatEngine
 }
 
 type Plugin interface {
@@ -63,7 +64,7 @@ var DefaultPlugins = []Plugin{
 func NewProcessor() ProcessorImpl {
 	Processor = &ProcessorImpl{
 		limiter:    limiter.NewLimiter(),
-		chatEngine: command.NewChatEngine(),
+		chatEngine: llmchat.NewChatEngine(),
 		Plugins:    DefaultPlugins,
 	}
 	return *Processor

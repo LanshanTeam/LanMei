@@ -64,6 +64,11 @@ type SearchResult struct {
 	Payload map[string][]string
 }
 
+type EmbeddingItem struct {
+	ID   uint64
+	Text string
+}
+
 func f64ToF32(vec []float64) ([]float32, error) {
 	if len(vec) == 0 {
 		return nil, errors.New("vector is empty")
@@ -119,6 +124,57 @@ func (m *EmbeddingManagerImpl) UpdateKnowledge(ctx context.Context, datas []feis
 			return
 		}
 	}
+}
+
+func (m *EmbeddingManagerImpl) UpsertTextItems(ctx context.Context, collection string, items []EmbeddingItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+	strs := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Text == "" {
+			continue
+		}
+		strs = append(strs, item.Text)
+	}
+	if len(strs) == 0 {
+		return nil
+	}
+	embeddings, err := m.embedder.EmbedStrings(ctx, strs)
+	if err != nil {
+		return err
+	}
+	if len(embeddings) != len(strs) {
+		return errors.New("embedding count mismatch")
+	}
+	db := m.db.WithContext(ctx)
+	idx := 0
+	for _, item := range items {
+		if item.Text == "" {
+			continue
+		}
+		vecF64 := embeddings[idx]
+		idx++
+		vecF32, err := f64ToF32(vecF64)
+		if err != nil {
+			llog.Error("向量转换失败", "err", err)
+			continue
+		}
+		payload, err := json.Marshal([]string{item.Text})
+		if err != nil {
+			llog.Error("payload 序列化失败", "err", err)
+			continue
+		}
+		vec := pgvector.NewVector(vecF32)
+		if err := db.Exec(`INSERT INTO embeddings (collection, id, embedding, payload_json)
+			VALUES (?, ?, ?, ?)
+			ON CONFLICT (collection, id) DO UPDATE SET embedding = EXCLUDED.embedding, payload_json = EXCLUDED.payload_json`,
+			collection, item.ID, vec, string(payload)).Error; err != nil {
+			llog.Error("Postgres Upsert 失败", err)
+			return err
+		}
+	}
+	return nil
 }
 
 // ====== TopK：查询向量只收 float64，返回 payload 为 map[string][]string ======
@@ -196,6 +252,10 @@ func (m *DBManagerImpl) GetTopK(ctx context.Context, collection string, K uint64
 		}
 	}
 	return out
+}
+
+func (m *DBManagerImpl) UpsertEmbeddingTexts(ctx context.Context, collection string, items []EmbeddingItem) error {
+	return m.embedDB.UpsertTextItems(ctx, collection, items)
 }
 
 func (m *DBManagerImpl) UpdateEmbedding(ctx context.Context, collection string, feishu *feishu.ReplyTable) {
