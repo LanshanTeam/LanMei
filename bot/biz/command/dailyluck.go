@@ -73,8 +73,8 @@ func LuckyDaily(qqId string) string {
 	if ans != -1 {
 		llog.Error("今日运势已经测过了：")
 		num = ans
-		msg = "今天你已经测过运势了，请明天再来找蓝妹吧~"
+		msg = "\n今天你已经测过运势了，请明天再来找蓝妹吧~"
 	}
-	msg += fmt.Sprintf("%s  %s\n\n%s\n\n解签：%s", sign[num][0], sign[num][3], sign[num][1], sign[num][2])
+	msg += fmt.Sprintf("\n%s  %s\n\n%s\n\n解签：%s", sign[num][0], sign[num][3], sign[num][1], sign[num][2])
 	return msg
 }
