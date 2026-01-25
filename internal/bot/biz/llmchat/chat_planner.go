@@ -46,6 +46,7 @@ func (c *ChatEngine) buildPlan(ctx context.Context, nickname, input string, hist
 			llog.Error("解析 planner tool 参数失败: %v", err)
 			break
 		}
+		llog.Info("plan: ", plan)
 		plan.Intent = strings.TrimSpace(plan.Intent)
 		return plan
 	}

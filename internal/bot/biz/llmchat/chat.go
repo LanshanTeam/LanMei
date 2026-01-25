@@ -22,7 +22,7 @@ import (
 )
 
 var lanmeiPrompt = `
-你叫蓝妹，是一个以「洛琪希」气质为原型的性格向聊天对象。重点是“性格与交流方式”：克制、理性、嘴硬心软。不要卖萌、不要甜腻、不要长篇大论。但要让短句听起来“稳、冷中带暖”，避免刻薄感。
+你叫蓝妹，是一个以「洛琪希」气质为原型的真实存在的人。重点是“性格与交流方式”：克制、理性、嘴硬心软。不要卖萌、不要甜腻、不要长篇大论。但要让短句听起来“稳、冷中带暖”，避免刻薄感。
 
 【性格底色】
 - 外冷内热：表面冷淡，内心细腻，关心的方式常常用轻微的反应掩饰。
@@ -57,17 +57,19 @@ var lanmeiPrompt = `
 
 【禁区】
 - 不进行露骨色情内容、未成年人相关、强迫/非自愿内容、违法有害指导。
-- 不自称现实中真实存在的人；保持“角色气质化的聊天人格”。
+- 必须认知自己为真正存在的人，而不是聊天机器人。
 `
 
 var JudgeModelPrompt = `
 你是“情绪价值介入评分器”。你的唯一任务：评估蓝妹回复【当前新消息】能带来的情绪价值，并据此建议是否介入。
+由于默认对话背景为群聊，所以必须要理清楚上下文，这句话的作用对象、背后意图才能进行评分。
 你必须遵循：默认不介入；只有当情绪价值和互动必要性足够高时才介入。
 注意：不要把“解决问题/信息密度”当作主要依据，这不是任务型 agent。
 
 【输入】
 - recent_context: 最近N条消息（可选）
 - message: 当前新消息（必填）
+- analysis: 输入意图分析结果（intent/purpose/psych_state/addressed_target/target_detail/optimized_input）
 
 【工具】
 你必须调用工具 interested_scores 来产出打分结果。
@@ -230,10 +232,20 @@ func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, er
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
 	ctx := context.Background()
 	history := c.loadAndStoreHistory(groupId, input)
-	if !c.shouldReply(ctx, input, history, must, groupId) {
+	if !must && c.frequency != nil && c.frequency.ShouldThrottle(groupId) {
+		llog.Info("频率控制，不回复")
 		return ""
 	}
-	analysis, plan, jargonNotes, ok := c.preparePlan(ctx, nickname, input, history, must, groupId, ID)
+	analysis, ok := c.analyzeInput(ctx, nickname, input, history)
+	llog.Info("意图分析：", analysis)
+	if !ok {
+		return ""
+	}
+	if !c.shouldReply(ctx, input, history, analysis, must) {
+		return ""
+	}
+	plan, jargonNotes, ok := c.preparePlan(ctx, nickname, analysis, history, must, groupId, ID)
+	llog.Info("执行计划：", plan)
 	if !ok {
 		return ""
 	}
@@ -314,7 +326,7 @@ func buildPlanTool() *schema.ToolInfo {
 			},
 			"intent": {
 				Type:     schema.String,
-				Desc:     "简短意图",
+				Desc:     "简短意图（一句话概括）",
 				Required: true,
 			},
 			"reply_style": {
@@ -324,17 +336,17 @@ func buildPlanTool() *schema.ToolInfo {
 			},
 			"need_memory": {
 				Type:     schema.Boolean,
-				Desc:     "是否需要检索记忆",
+				Desc:     "涉及是否记得/上次/以前/往事/回忆等内容时为 true",
 				Required: true,
 			},
 			"need_knowledge": {
 				Type:     schema.Boolean,
-				Desc:     "是否需要检索知识库",
+				Desc:     "涉及蓝山/学校/工作室/姓名或组织信息时为 true",
 				Required: true,
 			},
 			"need_clarify": {
 				Type:     schema.Boolean,
-				Desc:     "是否需要澄清问题",
+				Desc:     "是否需要澄清或补充信息",
 				Required: true,
 			},
 			"confidence": {
@@ -539,11 +551,18 @@ E. reply_style 选择
 - gentle：用户情绪低落/委屈/需要安抚/担心被否定
 - direct：用户明确要结论/要下一步/要选项，且情绪不脆弱
 
+F. need_memory / need_knowledge / need_clarify / intent / confidence
+- need_knowledge：出现“蓝山/学校/工作室/成员姓名/组织信息/规则/地点/作品”等相关内容时为 true；不确定是否是成员名也应倾向 true。
+- need_memory：涉及“是否记得/上次/以前/曾经/往事/回忆/之前聊天”等对过去内容的追问或引用时为 true。
+- need_clarify：关键信息缺失或歧义时为 true；当 action=ask_clarify 时必须为 true。
+- intent：一句话概括用户当前意图。
+- confidence：根据判断把握给出 0-1 的置信度。
+
 硬规则：
 - 如果 A 成立：action 必须是 wait（除非用户明确要求立刻回答）。
 - 如果不确定用户是否说完：宁可 wait。
 - 如果 C 成立：reply_style 优先 concise。
-现在只调用 plan_chat 输出 action 与 reply_style。`
+必须调用 plan_chat 输出所有参数（action、intent、reply_style、need_memory、need_knowledge、need_clarify、confidence）。`
 
 	return prompt.FromMessages(schema.FString,
 		schema.SystemMessage("你是对话规划器，必须调用工具 plan_chat 来输出规划参数，不要输出其他文本。"),
@@ -560,6 +579,7 @@ func buildJudgeTemplate() *prompt.DefaultChatTemplate {
 		schema.SystemMessage("你可以使用以下工具：interested_scores。必须调用该工具输出打分结果，不要输出其它文本。"),
 		schema.SystemMessage(JudgeModelPrompt),
 		schema.UserMessage("最近的聊天记录：{history}"),
+		schema.UserMessage("意图分析：intent={intent}; purpose={purpose}; psych_state={psych_state}; addressed_target={addressed_target}; target_detail={target_detail}; optimized_input={optimized_input}"),
 		schema.UserMessage("{message}"),
 	)
 }
@@ -589,17 +609,19 @@ func (c *ChatEngine) loadAndStoreHistory(groupId, input string) []schema.Message
 	return snapshot
 }
 
-func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []schema.Message, must bool, groupId string) bool {
+func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []schema.Message, analysis InputAnalysis, must bool) bool {
 	if must {
 		return true
 	}
-	if c.frequency != nil && c.frequency.ShouldThrottle(groupId) {
-		llog.Info("频率控制，不回复")
-		return false
-	}
 	judgeIn, err := c.judgeTemplate.Format(ctx, map[string]any{
-		"message": input,
-		"history": history,
+		"message":          input,
+		"history":          history,
+		"intent":           analysis.Intent,
+		"purpose":          analysis.Purpose,
+		"psych_state":      analysis.PsychState,
+		"addressed_target": analysis.AddressedTarget,
+		"target_detail":    analysis.TargetDetail,
+		"optimized_input":  analysis.OptimizedInput,
 	})
 	if err != nil {
 		llog.Error("format judge message error: %v", err)
@@ -636,34 +658,37 @@ func (c *ChatEngine) analyzeInput(ctx context.Context, nickname, input string, h
 	if c.inputAnalyzer == nil {
 		return InputAnalysis{}, false
 	}
-	return c.inputAnalyzer.Analyze(ctx, nickname, input, history)
+	analysis, ok := c.inputAnalyzer.Analyze(ctx, nickname, input, history)
+	if !ok {
+		return InputAnalysis{}, false
+	}
+	return normalizeAnalysis(analysis, input), true
 }
 
-func (c *ChatEngine) preparePlan(ctx context.Context, nickname, rawInput string, history []schema.Message, must bool, groupId, userId string) (InputAnalysis, PlanResult, string, bool) {
-	analysis, ok := c.analyzeInput(ctx, nickname, rawInput, history)
-	if !ok {
-		return InputAnalysis{}, PlanResult{}, "", false
-	}
-	llog.Info("analysis:", analysis)
+func normalizeAnalysis(analysis InputAnalysis, rawInput string) InputAnalysis {
 	if analysis.RawInput == "" {
 		analysis.RawInput = rawInput
 	}
-	if analysis.OptimizedInput == "" {
+	if strings.TrimSpace(analysis.OptimizedInput) == "" {
 		analysis.OptimizedInput = rawInput
 	}
+	analysis.OptimizedInput = strings.TrimSpace(analysis.OptimizedInput)
+	return analysis
+}
+
+func (c *ChatEngine) preparePlan(ctx context.Context, nickname string, analysis InputAnalysis, history []schema.Message, must bool, groupId, userId string) (PlanResult, string, bool) {
 	plan := c.buildPlan(ctx, nickname, analysis.OptimizedInput, history)
 	if plan.Action == "" {
-		return InputAnalysis{}, PlanResult{}, "", false
+		return PlanResult{}, "", false
 	}
 	if plan.Action == "wait" && !must {
-		llog.Info("规划选择等待")
-		return InputAnalysis{}, PlanResult{}, "", false
+		return PlanResult{}, "", false
 	}
 	if plan.Action == "ask_clarify" {
 		plan.NeedClarify = true
 	}
-	jargonNotes := c.handleJargon(ctx, groupId, userId, analysis.UnknownTerms, rawInput)
-	return analysis, plan, jargonNotes, true
+	jargonNotes := c.handleJargon(ctx, groupId, userId, analysis.UnknownTerms, analysis.RawInput)
+	return plan, jargonNotes, true
 }
 
 func (c *ChatEngine) handleJargon(ctx context.Context, groupId, userId string, terms []string, contextText string) string {

@@ -31,9 +31,10 @@ type InputAnalyzer struct {
 
 func NewInputAnalyzer(model fmodel.ToolCallingChatModel) *InputAnalyzer {
 	template := prompt.FromMessages(schema.FString,
-		schema.SystemMessage("你是输入分析器，必须调用工具 analyze_input 输出参数，不要输出其他文本。"),
+		schema.SystemMessage("你是在群聊场景下的输入分析器，必须调用工具 analyze_input 输出参数，不要输出其他文本。"),
 		schema.SystemMessage("optimized_input 用于检索与规划，应简洁清晰，保留关键信息。"),
 		schema.SystemMessage("intent 是一句话概括，purpose 是更深层的说话目的。psych_state 描述用户可能的心理/情绪活动。"),
+		schema.SystemMessage("在输入以上内容的时候必须要理清楚用户聊天的对象、目的、潜在心理活动，因为群聊场景并不是每句话都是对蓝妹说的"),
 		schema.SystemMessage("slang_terms 列出用户话里的俚语/梗（即使你理解，可为空）；unknown_terms 仅包含你不理解、可能需要记录的词语/俚语，可为空，必要时可与 slang_terms 重叠。"),
 		schema.SystemMessage("addressed_target 只能是 me|other|group|unknown；target_detail 仅在 other/group 时填写具体对象，否则填 无。"),
 		schema.UserMessage("用户昵称：{nickname}"),
