@@ -9,8 +9,10 @@ import (
 	"LanMei/internal/bot/utils/sensitive"
 	"fmt"
 	"strings"
+	"time"
 
 	zero "github.com/wdvxdr1123/ZeroBot"
+	"github.com/wdvxdr1123/ZeroBot/message"
 )
 
 type ProcessorImpl struct {
@@ -77,7 +79,13 @@ func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	if msg == "" {
 		return nil
 	}
-	ctx.Send(msg)
+	if ctx.Event.RawEvent.Time().Add(30 * time.Second).After(time.Now()) {
+		message.ReplyWithMessage(ctx.Event.MessageID, message.Text(msg))
+		return nil
+	}
+	ctx.Send(message.Message{
+		message.Text(msg),
+	})
 	return nil
 }
 

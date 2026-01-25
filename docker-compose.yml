@@ -28,6 +28,7 @@ services:
     image: linyuchen/pmhq:7.0.6
     container_name: pmhq
     privileged: true
+    restart: always
     environment:
       - ENABLE_HEADLESS=false
     networks:
@@ -38,6 +39,7 @@ services:
   llbot:
     image: linyuchen/llbot:7.7.0
     container_name: llonebot
+    restart: always
     ports:
       - "3080:3080"
     extra_hosts:
