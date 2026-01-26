@@ -13,8 +13,11 @@ import (
 )
 
 type MemoryExtraction struct {
-	Summary string   `json:"summary"`
-	Facts   []string `json:"facts"`
+	Sufficient   bool     `json:"sufficient"`
+	Participants []string `json:"participants"`
+	Cause        string   `json:"cause"`
+	Process      string   `json:"process"`
+	Result       string   `json:"result"`
 }
 
 type MemoryExtractor struct {
@@ -24,11 +27,13 @@ type MemoryExtractor struct {
 
 func NewMemoryExtractor(model fmodel.ToolCallingChatModel) *MemoryExtractor {
 	template := prompt.FromMessages(schema.FString,
-		schema.SystemMessage("你是群聊记忆提取器，必须调用工具 extract_memory 输出参数，不要输出其他文本。"),
-		schema.SystemMessage("聚合以下事件，记录用户行为与性格特征，忽略短期情绪。"),
-		schema.SystemMessage("summary 要覆盖本批次核心事件，facts 使用简洁要点并标明用户名或昵称。"),
+		schema.SystemMessage("你是群聊记忆整理器，必须调用工具 extract_memory_event 输出参数，不要输出其他文本。"),
+		schema.SystemMessage("任务：把下面的聊天记录合并成一条记忆事件，提取主要参与者、起因、经过、结果。"),
+		schema.SystemMessage("当 force=false 且信息不足以构成事件（碎片/闲聊/缺少因果）时，sufficient=false，其他字段可留空或填“无”。"),
+		schema.SystemMessage("当 force=true 时，即便信息不足，也要尽量给出参与者/起因/经过/结果，缺失部分写“无”。"),
 		schema.UserMessage("群:{group_id}"),
-		schema.UserMessage("事件列表:\n{events_text}"),
+		schema.UserMessage("force:{force}"),
+		schema.UserMessage("聊天记录:\n{events_text}"),
 	)
 	return &MemoryExtractor{
 		model:    model,
@@ -36,16 +41,17 @@ func NewMemoryExtractor(model fmodel.ToolCallingChatModel) *MemoryExtractor {
 	}
 }
 
-func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, events []MemoryEvent) MemoryExtraction {
+func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, messages []MemoryMessage, force bool) MemoryExtraction {
 	if e == nil || e.model == nil || e.template == nil {
 		return MemoryExtraction{}
 	}
-	if len(events) == 0 {
+	if len(messages) == 0 {
 		return MemoryExtraction{}
 	}
 	in, err := e.template.Format(ctx, map[string]any{
 		"group_id":    groupID,
-		"events_text": formatMemoryEvents(events),
+		"force":       force,
+		"events_text": formatMemoryMessages(messages),
 	})
 	if err != nil {
 		llog.Error("format memory extractor prompt error: %v", err)
@@ -57,7 +63,7 @@ func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, even
 		return MemoryExtraction{}
 	}
 	for _, tc := range msg.ToolCalls {
-		if tc.Function.Name != "extract_memory" {
+		if tc.Function.Name != "extract_memory_event" {
 			continue
 		}
 		var result MemoryExtraction
@@ -65,25 +71,31 @@ func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, even
 			llog.Error("解析记忆提取工具参数失败: %v", err)
 			break
 		}
-		result.Summary = strings.TrimSpace(result.Summary)
-		cleanFacts := make([]string, 0, len(result.Facts))
-		for _, fact := range result.Facts {
-			fact = strings.TrimSpace(fact)
-			if fact == "" {
+		result.Cause = strings.TrimSpace(result.Cause)
+		result.Process = strings.TrimSpace(result.Process)
+		result.Result = strings.TrimSpace(result.Result)
+		cleanParticipants := make([]string, 0, len(result.Participants))
+		for _, participant := range result.Participants {
+			participant = strings.TrimSpace(participant)
+			if participant == "" {
 				continue
 			}
-			cleanFacts = append(cleanFacts, fact)
+			cleanParticipants = append(cleanParticipants, participant)
 		}
-		result.Facts = cleanFacts
+		result.Participants = dedupeStrings(cleanParticipants)
 		return result
 	}
 	return MemoryExtraction{}
 }
 
-func formatMemoryEvents(events []MemoryEvent) string {
-	lines := make([]string, 0, len(events))
-	for i, event := range events {
-		line := fmt.Sprintf("[%d] 用户:%s(%s) 消息:%s 蓝妹:%s", i+1, event.Nickname, event.UserID, event.Input, event.Reply)
+func formatMemoryMessages(messages []MemoryMessage) string {
+	lines := make([]string, 0, len(messages))
+	for i, msg := range messages {
+		speaker := memoryMessageSpeaker(msg)
+		if speaker == "" {
+			speaker = "用户"
+		}
+		line := fmt.Sprintf("[%d] %s(%v) %s", i+1, speaker, msg.Role, strings.TrimSpace(msg.Content))
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")

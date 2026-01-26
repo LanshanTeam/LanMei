@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
@@ -76,10 +75,8 @@ type ChatEngine struct {
 	judgeTemplate *prompt.DefaultChatTemplate
 	plannerModel  fmodel.ToolCallingChatModel
 	planTemplate  *prompt.DefaultChatTemplate
-	History       *sync.Map
 	reranker      *rerank.Reranker
 	memory        *MemoryManager
-	memoryWorker  *MemoryWorker
 	jargonManager *JargonManager
 	inputAnalyzer *InputAnalyzer
 	frequency     *FrequencyControlManager
@@ -148,8 +145,9 @@ func NewChatEngine() *ChatEngine {
 	reply := feishu.NewReplyTable()
 	go dao.DBManager.UpdateEmbedding(context.Background(), dao.CollectionName, reply)
 	memoryExtractor := NewMemoryExtractor(memoryToolModel)
-	memoryManager := NewMemoryManager(reranker, memoryExtractor)
+	memoryManager := NewMemoryManager(reranker, memoryExtractor, MaxHistory)
 	memoryWorker := startMemoryWorker(memoryManager)
+	memoryManager.BindWorker(memoryWorker)
 	inputAnalyzer := NewInputAnalyzer(analysisModel)
 	jargonLearner := NewJargonLearner(jargonModel)
 
@@ -161,10 +159,8 @@ func NewChatEngine() *ChatEngine {
 		judgeTemplate: judgeTemplate,
 		plannerModel:  plannerModel,
 		planTemplate:  planTemplate,
-		History:       &sync.Map{},
 		reranker:      reranker,
 		memory:        memoryManager,
-		memoryWorker:  memoryWorker,
 		jargonManager: NewJargonManager(jargonLearner),
 		inputAnalyzer: inputAnalyzer,
 		frequency:     NewFrequencyControlManager(),
@@ -191,7 +187,7 @@ func computeReplyScore(params map[string]interface{}) (float64, bool) {
 
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
 	ctx := context.Background()
-	history := c.loadAndStoreHistory(groupId, input)
+	history := c.loadAndStoreHistory(groupId, ID, nickname, input)
 	if !must && c.frequency != nil && c.frequency.ShouldThrottle(groupId) {
 		llog.Info("频率控制，不回复")
 		return ""
@@ -225,7 +221,7 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, gr
 	if sensitive.HaveSensitive(msg.Content) {
 		return "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	}
-	c.finalizeReply(groupId, ID, nickname, input, msg.Content, history)
+	c.finalizeReply(groupId, msg.Content)
 	return msg.Content
 }
 
@@ -442,21 +438,36 @@ func buildJargonTool() *schema.ToolInfo {
 
 func buildMemoryTool() *schema.ToolInfo {
 	return &schema.ToolInfo{
-		Name: "extract_memory",
-		Desc: "抽取对话记忆摘要与可长期记忆的事实",
+		Name: "extract_memory_event",
+		Desc: "抽取群聊记忆事件，包含参与者、起因、经过、结果",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"summary": {
-				Type:     schema.String,
-				Desc:     "一句话总结本轮对话，15-60字",
+			"sufficient": {
+				Type:     schema.Boolean,
+				Desc:     "当前记录是否足以构成一条记忆事件",
 				Required: true,
 			},
-			"facts": {
+			"participants": {
 				Type:     schema.Array,
-				Desc:     "可长期记忆的事实列表",
+				Desc:     "主要参与者列表",
 				Required: true,
 				ElemInfo: &schema.ParameterInfo{
 					Type: schema.String,
 				},
+			},
+			"cause": {
+				Type:     schema.String,
+				Desc:     "起因/触发点，缺失可写 无",
+				Required: true,
+			},
+			"process": {
+				Type:     schema.String,
+				Desc:     "经过/过程，缺失可写 无",
+				Required: true,
+			},
+			"result": {
+				Type:     schema.String,
+				Desc:     "结果/结论，缺失可写 无",
+				Required: true,
 			},
 		}),
 	}
@@ -695,7 +706,7 @@ E4) 你之前只是“跟刷一句/很短”，而现在有人抛出关键问题
 }
 
 func startMemoryWorker(manager *MemoryManager) *MemoryWorker {
-	worker := NewMemoryWorker(manager, 12*time.Second, 6)
+	worker := NewMemoryWorker(manager, 12*time.Second, 4, 12)
 	worker.Start()
 	return worker
 }
@@ -704,19 +715,11 @@ func floatPtr(value float32) *float32 {
 	return &value
 }
 
-func (c *ChatEngine) loadAndStoreHistory(groupId, input string) []schema.Message {
-	history, ok := c.History.Load(groupId)
-	if !ok {
-		history = []schema.Message{}
+func (c *ChatEngine) loadAndStoreHistory(groupId, userId, nickname, input string) []schema.Message {
+	if c.memory == nil {
+		return []schema.Message{}
 	}
-	historyMsgs := history.([]schema.Message)
-	snapshot := append([]schema.Message{}, historyMsgs...)
-	historyMsgs = append(historyMsgs, schema.Message{
-		Role:    schema.User,
-		Content: input,
-	})
-	c.History.Store(groupId, historyMsgs)
-	return snapshot
+	return c.memory.LoadHistoryAndAppendUser(groupId, userId, nickname, input)
 }
 
 func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []schema.Message, analysis InputAnalysis, must bool) bool {
@@ -874,29 +877,13 @@ func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, anal
 	})
 }
 
-func (c *ChatEngine) finalizeReply(groupId, userId, nickname, rawInput, reply string, history []schema.Message) {
-	history = append(history, schema.Message{
-		Role:    schema.User,
-		Content: rawInput,
-	})
-	history = append(history, schema.Message{
-		Role:    schema.Assistant,
-		Content: reply,
-	})
-	for len(history) > MaxHistory {
-		history = history[1:]
+func (c *ChatEngine) finalizeReply(groupId, reply string) {
+	if c.memory != nil {
+		c.memory.AppendAssistant(groupId, reply)
 	}
-	c.History.Store(groupId, history)
 	if c.frequency != nil {
 		c.frequency.MarkSent(groupId)
 	}
-	c.signalMemory(MemoryEvent{
-		GroupID:  groupId,
-		UserID:   userId,
-		Nickname: nickname,
-		Input:    rawInput,
-		Reply:    reply,
-	})
 }
 
 func (c *ChatEngine) recallMemory(ctx context.Context, query, groupId string, needMemory bool) string {
@@ -924,9 +911,11 @@ func (c *ChatEngine) recallKnowledge(ctx context.Context, query string, needKnow
 	return msgs
 }
 
-func (c *ChatEngine) signalMemory(event MemoryEvent) {
-	if c.memoryWorker == nil {
+func (c *ChatEngine) Shutdown() {
+	if c == nil {
 		return
 	}
-	c.memoryWorker.Signal(event)
+	if c.memory != nil {
+		c.memory.FlushAll()
+	}
 }

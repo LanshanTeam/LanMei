@@ -101,6 +101,15 @@ func (p *ProcessorImpl) AddPlugin(plugin Plugin) {
 	p.Plugins = append(p.Plugins, plugin)
 }
 
+func (p *ProcessorImpl) Shutdown() {
+	if p == nil {
+		return
+	}
+	if p.chatEngine != nil {
+		p.chatEngine.Shutdown()
+	}
+}
+
 // MessageProcess 生成回复消息。
 func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 	var msg string
