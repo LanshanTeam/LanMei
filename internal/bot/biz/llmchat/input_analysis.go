@@ -17,11 +17,11 @@ type InputAnalysis struct {
 	Intent          string   `json:"intent"`
 	Purpose         string   `json:"purpose"`
 	PsychState      string   `json:"psych_state"`
-	SlangTerms      []string `json:"slang_terms"`
-	UnknownTerms    []string `json:"unknown_terms"`
 	AddressedTarget string   `json:"addressed_target"`
 	TargetDetail    string   `json:"target_detail"`
 	NeedClarify     bool     `json:"need_clarify"`
+	NeedSearch      bool     `json:"need_search"`
+	SearchQueries   []string `json:"search_queries"`
 }
 
 type InputAnalyzer struct {
@@ -62,8 +62,7 @@ func NewInputAnalyzer(model fmodel.ToolCallingChatModel) *InputAnalyzer {
 		// ===== 指向对象判定（先于情绪）=====
 		schema.SystemMessage("必须优先判断 addressed_target：未点名你、未承接你上一句时，addressed_target 通常为 group 或 other；不要因为出现表情就判定为 me。"),
 
-		// ===== 俚语/未知词规则 =====
-		schema.SystemMessage("slang_terms 列出用户话里的俚语/梗（可为空）；unknown_terms 仅包含你不理解且可能要记录的词（可为空）。不要把表情放进 unknown_terms。若是固定梗如“笑死😭/绷不住/离谱/我裂开”，放 slang_terms。"),
+		schema.SystemMessage("need_search 在以下场景为 true：地点/位置/发生地/地点相关事件/名词解释；新发布游戏/新版本/最新版本/更新内容；最近的社会事件/新闻；技术前沿/新发布包版本。search_queries 为检索关键词数组，尽量简短；若不需要搜索则填空数组。俚语/未知词若需要解释，也用 search_queries 表达。"),
 
 		schema.UserMessage("用户昵称：{nickname}"),
 		schema.UserMessage("最近消息：{history}"),

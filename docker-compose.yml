@@ -5,6 +5,7 @@ services:
     restart: always
     depends_on:
       - postgres
+      - openserp
     ports:
       - "8080:8080"
     networks:
@@ -54,6 +55,14 @@ services:
       - ./llbot_config:/app/llbot/data:rw
     depends_on:
       - pmhq
+
+  openserp:
+    image: karust/openserp:latest
+    container_name: openserp
+    restart: always
+    command: ["serve", "-a", "0.0.0.0", "-p", "7000"]
+    networks:
+      - app-network
 
 volumes:
   qq_volume:

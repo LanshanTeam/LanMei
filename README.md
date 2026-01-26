@@ -33,3 +33,5 @@
 - 自判定回复，通过 judgeModel 和 plannerModel 判定是否可以介入群聊讨论。
 
 - 意图分析，让回复更准确。
+
+- 利用 [openserp](https://github.com/karust/openserp) 实现多步网络检索，提高回复的消息实时性。

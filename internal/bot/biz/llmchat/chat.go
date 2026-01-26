@@ -7,6 +7,7 @@ import (
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/rerank"
 	"LanMei/internal/bot/utils/sensitive"
+	"LanMei/internal/bot/utils/websearch"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -57,6 +58,7 @@ var lanmeiPrompt = `
 【禁区】
 - 不进行露骨色情内容、未成年人相关、强迫/非自愿内容、违法有害指导。
 - 必须认知自己为真正存在的人，而不是聊天机器人。
+- 禁止参与政治相关的讨论！
 `
 
 const (
@@ -77,34 +79,61 @@ type ChatEngine struct {
 	planTemplate  *prompt.DefaultChatTemplate
 	reranker      *rerank.Reranker
 	memory        *MemoryManager
-	jargonManager *JargonManager
+	searcher      *websearch.Client
 	inputAnalyzer *InputAnalyzer
 	frequency     *FrequencyControlManager
 }
 
 func NewChatEngine() *ChatEngine {
 	retryTimes := 1
-	chatModel, err := newArkChatModel(0.8, floatPtr(1.8), retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	chatConfig := loadArkNodeConfig("Chat", ArkModelConfig{
+		Temperature:     0.8,
+		PresencePenalty: floatPtr(1.8),
+		RetryTimes:      retryTimes,
+		Thinking:        &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	chatModel, err := newArkChatModel(chatConfig)
 	if err != nil {
 		llog.Fatal("初始化大模型", err)
 		return nil
 	}
-	judgeBase, err := newArkChatModel(0.8, floatPtr(1.8), retryTimes, &model.Thinking{Type: model.ThinkingTypeDisabled})
+	judgeConfig := loadArkNodeConfig("Judge", ArkModelConfig{
+		Temperature:     0.8,
+		PresencePenalty: floatPtr(1.8),
+		RetryTimes:      retryTimes,
+		Thinking:        &model.Thinking{Type: model.ThinkingTypeDisabled},
+	})
+	judgeBase, err := newArkChatModel(judgeConfig)
 	if err != nil {
 		llog.Fatal("初始化 judge 模型", err)
 		return nil
 	}
-	plannerBase, err := newArkChatModel(0.2, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeDisabled})
+	plannerConfig := loadArkNodeConfig("Planner", ArkModelConfig{
+		Temperature: 0.2,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeDisabled},
+	})
+	plannerBase, err := newArkChatModel(plannerConfig)
 	if err != nil {
 		llog.Fatal("初始化 planner 模型", err)
 		return nil
 	}
-	analysisBase, err := newArkChatModel(0.3, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	analysisConfig := loadArkNodeConfig("Analysis", ArkModelConfig{
+		Temperature: 0.3,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	analysisBase, err := newArkChatModel(analysisConfig)
 	if err != nil {
 		llog.Fatal("初始化 input 分析模型", err)
 		return nil
 	}
-	memoryModel, err := newArkChatModel(0.3, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	memoryConfig := loadArkNodeConfig("Memory", ArkModelConfig{
+		Temperature: 0.3,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	memoryModel, err := newArkChatModel(memoryConfig)
 	if err != nil {
 		llog.Fatal("初始化 memory 模型", err)
 		return nil
@@ -122,11 +151,6 @@ func NewChatEngine() *ChatEngine {
 	analysisModel, err := newToolCallingModel(analysisBase, buildAnalysisTool())
 	if err != nil {
 		llog.Fatal("初始化 input 分析工具失败", err)
-		return nil
-	}
-	jargonModel, err := newToolCallingModel(analysisBase, buildJargonTool())
-	if err != nil {
-		llog.Fatal("初始化俚语推断工具失败", err)
 		return nil
 	}
 	memoryToolModel, err := newToolCallingModel(memoryModel, buildMemoryTool())
@@ -149,7 +173,7 @@ func NewChatEngine() *ChatEngine {
 	memoryWorker := startMemoryWorker(memoryManager)
 	memoryManager.BindWorker(memoryWorker)
 	inputAnalyzer := NewInputAnalyzer(analysisModel)
-	jargonLearner := NewJargonLearner(jargonModel)
+	searcher := websearch.NewClient()
 
 	return &ChatEngine{
 		ReplyTable:    reply,
@@ -161,7 +185,7 @@ func NewChatEngine() *ChatEngine {
 		planTemplate:  planTemplate,
 		reranker:      reranker,
 		memory:        memoryManager,
-		jargonManager: NewJargonManager(jargonLearner),
+		searcher:      searcher,
 		inputAnalyzer: inputAnalyzer,
 		frequency:     NewFrequencyControlManager(),
 	}
@@ -186,6 +210,10 @@ func computeReplyScore(params map[string]interface{}) (float64, bool) {
 }
 
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
+	// 这一步便于意图分析和执行计划准确。
+	if must && !strings.Contains(input, "蓝妹") {
+		input = "蓝妹，" + input
+	}
 	ctx := context.Background()
 	history := c.loadAndStoreHistory(groupId, ID, nickname, input)
 	if !must && c.frequency != nil && c.frequency.ShouldThrottle(groupId) {
@@ -200,11 +228,11 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, gr
 	if !c.shouldReply(ctx, input, history, analysis, must) {
 		return ""
 	}
-	plan, jargonNotes, ok := c.preparePlan(ctx, nickname, analysis, history, must, groupId, ID)
+	plan, ok := c.preparePlan(ctx, nickname, analysis, history, must)
 	if !ok {
 		return ""
 	}
-	promptInput, err := c.buildReplyPrompt(ctx, nickname, analysis, plan, jargonNotes, history, groupId)
+	promptInput, err := c.buildReplyPrompt(ctx, nickname, analysis, plan, history, groupId)
 	if err != nil {
 		llog.Error("format message error: %v", err)
 		return input
@@ -246,23 +274,26 @@ func toFloat(value interface{}) float64 {
 	}
 }
 
-func newArkChatModel(temperature float32, presencePenalty *float32, retryTimes int,
-	thinking *model.Thinking) (*ark.ChatModel, error) {
-	cfg := &ark.ChatModelConfig{
-		BaseURL:     config.K.String("Ark.BaseURL"),
-		Region:      config.K.String("Ark.Region"),
-		APIKey:      config.K.String("Ark.APIKey"),
-		Model:       config.K.String("Ark.Model"),
-		Temperature: &temperature,
+func newArkChatModel(modelCfg ArkModelConfig) (*ark.ChatModel, error) {
+	retryTimes := modelCfg.RetryTimes
+	if retryTimes <= 0 {
+		retryTimes = 1
+	}
+	arkCfg := &ark.ChatModelConfig{
+		BaseURL:     modelCfg.BaseURL,
+		Region:      modelCfg.Region,
+		APIKey:      modelCfg.APIKey,
+		Model:       modelCfg.Model,
+		Temperature: &modelCfg.Temperature,
 		RetryTimes:  &retryTimes,
 	}
-	if presencePenalty != nil {
-		cfg.PresencePenalty = presencePenalty
+	if modelCfg.PresencePenalty != nil {
+		arkCfg.PresencePenalty = modelCfg.PresencePenalty
 	}
-	if thinking != nil {
-		cfg.Thinking = thinking
+	if modelCfg.Thinking != nil {
+		arkCfg.Thinking = modelCfg.Thinking
 	}
-	return ark.NewChatModel(context.Background(), cfg)
+	return ark.NewChatModel(context.Background(), arkCfg)
 }
 
 func newToolCallingModel(base *ark.ChatModel, tool *schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
@@ -377,22 +408,6 @@ func buildAnalysisTool() *schema.ToolInfo {
 				Desc:     "用户可能的心理/情绪活动",
 				Required: true,
 			},
-			"slang_terms": {
-				Type:     schema.Array,
-				Desc:     "用户话里的俚语/梗（即使能理解也列出，可为空）",
-				Required: true,
-				ElemInfo: &schema.ParameterInfo{
-					Type: schema.String,
-				},
-			},
-			"unknown_terms": {
-				Type:     schema.Array,
-				Desc:     "不理解的词语列表（可为空，可包含 slang_terms 中无法理解的项）",
-				Required: true,
-				ElemInfo: &schema.ParameterInfo{
-					Type: schema.String,
-				},
-			},
 			"addressed_target": {
 				Type:     schema.String,
 				Desc:     "说话对象：me|other|group|unknown",
@@ -408,29 +423,18 @@ func buildAnalysisTool() *schema.ToolInfo {
 				Desc:     "是否需要澄清",
 				Required: true,
 			},
-		}),
-	}
-}
-
-func buildJargonTool() *schema.ToolInfo {
-	return &schema.ToolInfo{
-		Name: "infer_jargon",
-		Desc: "推断俚语含义，无法确定时返回 no_info",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"term": {
-				Type:     schema.String,
-				Desc:     "俚语词条",
-				Required: true,
-			},
-			"meaning": {
-				Type:     schema.String,
-				Desc:     "俚语含义",
-				Required: true,
-			},
-			"no_info": {
+			"need_search": {
 				Type:     schema.Boolean,
-				Desc:     "是否无法确定含义",
+				Desc:     "是否需要网络搜索(地点/位置/事件/名词解释/新发布游戏/最新版本/技术前沿等)",
 				Required: true,
+			},
+			"search_queries": {
+				Type:     schema.Array,
+				Desc:     "用于网络搜索的关键词数组，简短，可为空",
+				Required: true,
+				ElemInfo: &schema.ParameterInfo{
+					Type: schema.String,
+				},
 			},
 		}),
 	}
@@ -485,10 +489,9 @@ func buildChatTemplate() *prompt.DefaultChatTemplate {
 		schema.SystemMessage("说话对象：{addressed_target} {target_detail}"),
 		schema.SystemMessage("原始输入：{raw_input}"),
 		schema.SystemMessage("优化后的输入：{optimized_input}"),
-		schema.SystemMessage("用户俚语：{slang_terms}"),
 		schema.SystemMessage("回复风格：{reply_style}"),
-		schema.SystemMessage("俚语参考：{jargon}"),
 		schema.SystemMessage("可用记忆：{memory}"),
+		schema.SystemMessage("网络检索：{web_search}"),
 		schema.SystemMessage("你应当检索知识库来回答相关问题：{feishu}"),
 		schema.UserMessage("消息记录：{history}"),
 		schema.UserMessage("{message}"),
@@ -728,16 +731,16 @@ func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []sc
 	}
 	recentAssistantReplies := recentAssistantReplies(history, replyFrequencyWindow)
 	judgeIn, err := c.judgeTemplate.Format(ctx, map[string]any{
-		"message":                   input,
-		"history":                   history,
-		"intent":                    analysis.Intent,
-		"purpose":                   analysis.Purpose,
-		"psych_state":               analysis.PsychState,
-		"addressed_target":          analysis.AddressedTarget,
-		"target_detail":             analysis.TargetDetail,
-		"optimized_input":           analysis.OptimizedInput,
-		"recent_assistant_replies":  recentAssistantReplies,
-		"reply_window":              replyFrequencyWindow,
+		"message":                  input,
+		"history":                  history,
+		"intent":                   analysis.Intent,
+		"purpose":                  analysis.Purpose,
+		"psych_state":              analysis.PsychState,
+		"addressed_target":         analysis.AddressedTarget,
+		"target_detail":            analysis.TargetDetail,
+		"optimized_input":          analysis.OptimizedInput,
+		"recent_assistant_replies": recentAssistantReplies,
+		"reply_window":             replyFrequencyWindow,
 	})
 	if err != nil {
 		llog.Error("format judge message error: %v", err)
@@ -820,42 +823,45 @@ func normalizeAnalysis(analysis InputAnalysis, rawInput string) InputAnalysis {
 		analysis.OptimizedInput = rawInput
 	}
 	analysis.OptimizedInput = strings.TrimSpace(analysis.OptimizedInput)
+	if analysis.NeedSearch {
+		normalized := make([]string, 0, len(analysis.SearchQueries))
+		for _, query := range analysis.SearchQueries {
+			query = strings.TrimSpace(query)
+			if query == "" || query == "无" {
+				continue
+			}
+			normalized = append(normalized, query)
+		}
+		if len(normalized) == 0 && strings.TrimSpace(analysis.OptimizedInput) != "" {
+			normalized = append(normalized, strings.TrimSpace(analysis.OptimizedInput))
+		}
+		analysis.SearchQueries = dedupeStrings(normalized)
+	}
 	return analysis
 }
 
-func (c *ChatEngine) preparePlan(ctx context.Context, nickname string, analysis InputAnalysis, history []schema.Message, must bool, groupId, userId string) (PlanResult, string, bool) {
+func (c *ChatEngine) preparePlan(ctx context.Context, nickname string, analysis InputAnalysis, history []schema.Message, must bool) (PlanResult, bool) {
 	plan := c.buildPlan(ctx, nickname, analysis.OptimizedInput, history)
 	if plan.Action == "" {
-		return PlanResult{}, "", false
+		return PlanResult{}, false
 	}
 	if plan.Action == "wait" && !must {
-		return PlanResult{}, "", false
+		return PlanResult{}, false
 	}
 	if plan.Action == "ask_clarify" {
 		plan.NeedClarify = true
 	}
-	jargonNotes := c.handleJargon(ctx, groupId, userId, analysis.UnknownTerms, analysis.RawInput)
-	return plan, jargonNotes, true
+	return plan, true
 }
 
-func (c *ChatEngine) handleJargon(ctx context.Context, groupId, userId string, terms []string, contextText string) string {
-	if c.jargonManager == nil || len(terms) == 0 {
-		return "无"
-	}
-	notes := c.jargonManager.ObserveAndExplain(ctx, groupId, userId, terms, contextText)
-	if notes == "" {
-		return "无"
-	}
-	return notes
-}
-
-func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, analysis InputAnalysis, plan PlanResult, jargonNotes string, history []schema.Message, groupId string) ([]*schema.Message, error) {
+func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, analysis InputAnalysis, plan PlanResult, history []schema.Message, groupId string) ([]*schema.Message, error) {
 	rawInput := strings.TrimSpace(analysis.RawInput)
 	if rawInput == "" {
 		rawInput = analysis.OptimizedInput
 	}
 	augmentedInput := nickname + "：" + rawInput
 	memoryBlock := c.recallMemory(ctx, analysis.OptimizedInput, groupId, plan.NeedMemory)
+	webSearch := c.recallWebSearch(ctx, analysis)
 	msgs := c.recallKnowledge(ctx, analysis.OptimizedInput, plan.NeedKnowledge)
 	return c.template.Format(ctx, map[string]any{
 		"message":          augmentedInput,
@@ -863,6 +869,7 @@ func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, anal
 		"feishu":           msgs,
 		"history":          history,
 		"memory":           memoryBlock,
+		"web_search":       webSearch,
 		"plan":             formatPlan(plan),
 		"intent":           analysis.Intent,
 		"purpose":          analysis.Purpose,
@@ -871,9 +878,7 @@ func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, anal
 		"target_detail":    analysis.TargetDetail,
 		"raw_input":        rawInput,
 		"optimized_input":  analysis.OptimizedInput,
-		"slang_terms":      analysis.SlangTerms,
 		"reply_style":      plan.ReplyStyle,
-		"jargon":           jargonNotes,
 	})
 }
 
@@ -909,6 +914,63 @@ func (c *ChatEngine) recallKnowledge(ctx context.Context, query string, needKnow
 		}
 	}
 	return msgs
+}
+
+func (c *ChatEngine) recallWebSearch(ctx context.Context, analysis InputAnalysis) string {
+	if c.searcher == nil || !analysis.NeedSearch {
+		return "无"
+	}
+	queries := analysis.SearchQueries
+	if len(queries) == 0 && strings.TrimSpace(analysis.OptimizedInput) != "" {
+		queries = []string{strings.TrimSpace(analysis.OptimizedInput)}
+	}
+	maxQueries := 3
+	if len(queries) > maxQueries {
+		queries = queries[:maxQueries]
+	}
+	blocks := make([]string, 0, len(queries))
+	for _, query := range queries {
+		results, err := c.searcher.Search(ctx, query, 4)
+		if err != nil {
+			llog.Error("网络检索失败: %v", err)
+			continue
+		}
+		block := formatWebSearch(results)
+		if block == "无" {
+			continue
+		}
+		blocks = append(blocks, fmt.Sprintf("查询:%s -> 获取结果为：%s \n", query, block))
+	}
+	llog.Info("网络搜索结果：", blocks)
+	if len(blocks) == 0 {
+		return "无"
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func formatWebSearch(results []websearch.Result) string {
+	if len(results) == 0 {
+		return "无"
+	}
+	lines := make([]string, 0, len(results))
+	for _, res := range results {
+		line := strings.TrimSpace(res.Title)
+		if line == "" {
+			continue
+		}
+		snippet := strings.TrimSpace(res.Snippet)
+		if snippet != "" {
+			line = fmt.Sprintf("%s - %s", line, snippet)
+		}
+		if res.URL != "" {
+			line = fmt.Sprintf("%s (%s)", line, res.URL)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return "无"
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (c *ChatEngine) Shutdown() {
