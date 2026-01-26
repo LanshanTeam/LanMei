@@ -120,7 +120,7 @@ func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 		llog.Info("重复消息: ", input)
 		return ""
 	} else if sensitive.HaveSensitive(input) {
-		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
+		msg = ""
 	} else {
 		switch {
 		case len(strings.TrimSpace(input)) == 0 || len(input) > 2000:
