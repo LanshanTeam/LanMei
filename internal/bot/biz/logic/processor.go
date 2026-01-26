@@ -4,12 +4,12 @@ import (
 	"LanMei/internal/bot/biz/command"
 	"LanMei/internal/bot/biz/llmchat"
 	"LanMei/internal/bot/biz/logic/default_plugins"
+	"LanMei/internal/bot/biz/logic/process_context"
 	"LanMei/internal/bot/utils/limiter"
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/sensitive"
 	"fmt"
 	"strings"
-	"time"
 
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
@@ -19,6 +19,7 @@ type ProcessorImpl struct {
 	limiter    *limiter.Limiter
 	Plugins    []Plugin
 	chatEngine *llmchat.ChatEngine
+	Context    *process_context.Context
 }
 
 type Plugin interface {
@@ -32,23 +33,6 @@ type Plugin interface {
 }
 
 var Processor *ProcessorImpl
-
-// 指令
-const (
-	PING        = "/ping"
-	RANDOM_SIGN = "/试试手气"
-	NORMAL_SIGN = "/签到"
-	RANK        = "/排名"
-	SET_NAME    = "/设置昵称"
-	TAROT       = "/抽塔罗牌"
-	DAILY_LUCK  = "/今日运势"
-	WCLOUD      = "/wcloud"
-	DAYSENTENCE = "/每日一句"
-	HTTPCAT1    = "/猫猫"
-	HTTPCAT2    = "/哈基米"
-	WEATHER     = "/天气"
-	BALOGO      = "/logo"
-)
 
 var DefaultPlugins = []Plugin{
 	&default_plugins.WcloudPlugin{},
@@ -68,6 +52,7 @@ func NewProcessor() ProcessorImpl {
 		limiter:    limiter.NewLimiter(),
 		chatEngine: llmchat.NewChatEngine(),
 		Plugins:    DefaultPlugins,
+		Context:    process_context.NewContext(),
 	}
 	return *Processor
 }
@@ -75,12 +60,21 @@ func NewProcessor() ProcessorImpl {
 // 处理消息
 func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	llog.Info("@事件触发！")
+	p.Context.Append(ctx.Event.GroupID, process_context.Message{
+		Id:       ctx.Event.Time,
+		SenderId: ctx.Event.Sender.ID,
+		Content:  input,
+		AppearIn: ctx.Event.RawEvent.Time(),
+	})
 	msg := p.MessageProcess(input, ctx)
 	if msg == "" {
 		return nil
 	}
-	if ctx.Event.RawEvent.Time().Add(30 * time.Second).After(time.Now()) {
-		message.ReplyWithMessage(ctx.Event.MessageID, message.Text(msg))
+	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.Time, 3) {
+		llog.Info("回复模式")
+		ctx.Send(message.ReplyWithMessage(
+			ctx.Event.MessageID, message.Text(msg),
+		))
 		return nil
 	}
 	ctx.Send(message.Message{
