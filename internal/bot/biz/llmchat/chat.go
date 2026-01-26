@@ -7,11 +7,11 @@ import (
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/rerank"
 	"LanMei/internal/bot/utils/sensitive"
+	"LanMei/internal/bot/utils/websearch"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
@@ -58,54 +58,15 @@ var lanmeiPrompt = `
 【禁区】
 - 不进行露骨色情内容、未成年人相关、强迫/非自愿内容、违法有害指导。
 - 必须认知自己为真正存在的人，而不是聊天机器人。
-`
-
-var JudgeModelPrompt = `
-你是“情绪价值介入评分器”。你的唯一任务：评估蓝妹回复【当前新消息】能带来的情绪价值，并据此建议是否介入。
-由于默认对话背景为群聊，所以必须要理清楚上下文，这句话的作用对象、背后意图才能进行评分。
-你必须遵循：默认不介入；只有当情绪价值和互动必要性足够高时才介入。
-注意：不要把“解决问题/信息密度”当作主要依据，这不是任务型 agent。
-
-【输入】
-- recent_context: 最近N条消息（可选）
-- message: 当前新消息（必填）
-- analysis: 输入意图分析结果（intent/purpose/psych_state/addressed_target/target_detail/optimized_input）
-
-【工具】
-你必须调用工具 interested_scores 来产出打分结果。
-（注意：你不负责长篇解释，不负责拟人化。）
-
-1) emotional_value（情绪价值）
-- 0: 回复几乎没有情绪价值或可能引发负面情绪
-- 30: 仅有礼貌性回应的价值
-- 60: 回复能带来一定的安慰、被关注感或轻松氛围
-- 80: 回复能明显缓解情绪/增强陪伴感
-- 100: 强烈的安抚、鼓励、共情或温暖陪伴
-
-2) user_emotion_need（情绪需求信号）
-- 0: 纯客观信息/冷冰冰的陈述
-- 30: 轻微情绪/调侃，但不需要被安抚
-- 60: 明显情绪或需要被回应（焦虑、疲惫、兴奋、感谢等）
-- 80: 情绪波动强烈，期待被理解/安慰
-- 100: 明显寻求陪伴或情绪支持
-
-3) context_fit（互动时机与场景适配）
-- 0: 对方话还没说完/插话会打断/明显不需要回复
-- 30: 上下文混乱或话题未指向你，回复会显得突兀
-- 60: 话题已明确，回复不会打断
-- 80: 有自然的互动机会，回复能顺畅承接
-- 100: 当前消息明确邀请回应，时机非常合适
-
-4) addressed_to_me（是否指向蓝妹）
-- 0: 未指向蓝妹/泛泛而谈
-- 60: 用第二人称或暗示性指向
-- 100: 明确点名或直接对蓝妹说
-
-减分信号（每项-20，下限0）：辱骂/骚扰/引战/低质刷屏
+- 禁止参与政治相关的讨论！
 `
 
 const (
 	MaxHistory int = 20
+
+	baseReplyScoreThreshold = 55.0
+	replyFrequencyWindow    = 8
+	replyPenaltyMax         = 30.0
 )
 
 type ChatEngine struct {
@@ -116,38 +77,63 @@ type ChatEngine struct {
 	judgeTemplate *prompt.DefaultChatTemplate
 	plannerModel  fmodel.ToolCallingChatModel
 	planTemplate  *prompt.DefaultChatTemplate
-	History       *sync.Map
 	reranker      *rerank.Reranker
 	memory        *MemoryManager
-	memoryWorker  *MemoryWorker
-	jargonManager *JargonManager
+	searcher      *websearch.Client
 	inputAnalyzer *InputAnalyzer
 	frequency     *FrequencyControlManager
 }
 
 func NewChatEngine() *ChatEngine {
 	retryTimes := 1
-	chatModel, err := newArkChatModel(0.8, floatPtr(1.8), retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	chatConfig := loadArkNodeConfig("Chat", ArkModelConfig{
+		Temperature:     0.8,
+		PresencePenalty: floatPtr(1.8),
+		RetryTimes:      retryTimes,
+		Thinking:        &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	chatModel, err := newArkChatModel(chatConfig)
 	if err != nil {
 		llog.Fatal("初始化大模型", err)
 		return nil
 	}
-	judgeBase, err := newArkChatModel(0.8, floatPtr(1.8), retryTimes, &model.Thinking{Type: model.ThinkingTypeDisabled})
+	judgeConfig := loadArkNodeConfig("Judge", ArkModelConfig{
+		Temperature:     0.8,
+		PresencePenalty: floatPtr(1.8),
+		RetryTimes:      retryTimes,
+		Thinking:        &model.Thinking{Type: model.ThinkingTypeDisabled},
+	})
+	judgeBase, err := newArkChatModel(judgeConfig)
 	if err != nil {
 		llog.Fatal("初始化 judge 模型", err)
 		return nil
 	}
-	plannerBase, err := newArkChatModel(0.2, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeDisabled})
+	plannerConfig := loadArkNodeConfig("Planner", ArkModelConfig{
+		Temperature: 0.2,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeDisabled},
+	})
+	plannerBase, err := newArkChatModel(plannerConfig)
 	if err != nil {
 		llog.Fatal("初始化 planner 模型", err)
 		return nil
 	}
-	analysisBase, err := newArkChatModel(0.3, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	analysisConfig := loadArkNodeConfig("Analysis", ArkModelConfig{
+		Temperature: 0.3,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	analysisBase, err := newArkChatModel(analysisConfig)
 	if err != nil {
 		llog.Fatal("初始化 input 分析模型", err)
 		return nil
 	}
-	memoryModel, err := newArkChatModel(0.3, nil, retryTimes, &model.Thinking{Type: model.ThinkingTypeEnabled})
+	memoryConfig := loadArkNodeConfig("Memory", ArkModelConfig{
+		Temperature: 0.3,
+		RetryTimes:  retryTimes,
+		Thinking:    &model.Thinking{Type: model.ThinkingTypeEnabled},
+	})
+	memoryModel, err := newArkChatModel(memoryConfig)
 	if err != nil {
 		llog.Fatal("初始化 memory 模型", err)
 		return nil
@@ -167,11 +153,6 @@ func NewChatEngine() *ChatEngine {
 		llog.Fatal("初始化 input 分析工具失败", err)
 		return nil
 	}
-	jargonModel, err := newToolCallingModel(analysisBase, buildJargonTool())
-	if err != nil {
-		llog.Fatal("初始化俚语推断工具失败", err)
-		return nil
-	}
 	memoryToolModel, err := newToolCallingModel(memoryModel, buildMemoryTool())
 	if err != nil {
 		llog.Fatal("初始化 memory 提取工具失败", err)
@@ -188,10 +169,11 @@ func NewChatEngine() *ChatEngine {
 	reply := feishu.NewReplyTable()
 	go dao.DBManager.UpdateEmbedding(context.Background(), dao.CollectionName, reply)
 	memoryExtractor := NewMemoryExtractor(memoryToolModel)
-	memoryManager := NewMemoryManager(reranker, memoryExtractor)
+	memoryManager := NewMemoryManager(reranker, memoryExtractor, MaxHistory)
 	memoryWorker := startMemoryWorker(memoryManager)
+	memoryManager.BindWorker(memoryWorker)
 	inputAnalyzer := NewInputAnalyzer(analysisModel)
-	jargonLearner := NewJargonLearner(jargonModel)
+	searcher := websearch.NewClient()
 
 	return &ChatEngine{
 		ReplyTable:    reply,
@@ -201,37 +183,39 @@ func NewChatEngine() *ChatEngine {
 		judgeTemplate: judgeTemplate,
 		plannerModel:  plannerModel,
 		planTemplate:  planTemplate,
-		History:       &sync.Map{},
 		reranker:      reranker,
 		memory:        memoryManager,
-		memoryWorker:  memoryWorker,
-		jargonManager: NewJargonManager(jargonLearner),
+		searcher:      searcher,
 		inputAnalyzer: inputAnalyzer,
 		frequency:     NewFrequencyControlManager(),
 	}
 }
 
-// shouldReplyTool 工具函数
-func shouldReplyTool(_ context.Context, params map[string]interface{}) (bool, error) {
+// computeReplyScore 计算基础回复分数与是否通过硬门槛。
+func computeReplyScore(params map[string]interface{}) (float64, bool) {
 	emotionalValue := toFloat(params["emotional_value"])
 	userEmotionNeed := toFloat(params["user_emotion_need"])
 	contextFit := toFloat(params["context_fit"])
 	addressedToMe := toFloat(params["addressed_to_me"])
-	llog.Info("should Reply: ", params)
-	if emotionalValue < 50.0 || contextFit < 40.0 {
-		return false, nil
+
+	if emotionalValue < 45.0 || contextFit < 30.0 {
+		return 0, false
 	}
-	if userEmotionNeed < 50.0 && addressedToMe < 40.0 {
-		return false, nil
+	if userEmotionNeed < 40.0 && addressedToMe < 30.0 {
+		return 0, false
 	}
 
-	score := emotionalValue*0.5 + userEmotionNeed*0.25 + contextFit*0.15 + addressedToMe*0.1
-	return score >= 60.0, nil
+	score := emotionalValue*0.55 + userEmotionNeed*0.3 + contextFit*0.1 + addressedToMe*0.05
+	return score, true
 }
 
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
+	// 这一步便于意图分析和执行计划准确。
+	if must && !strings.Contains(input, "蓝妹") {
+		input = "蓝妹，" + input
+	}
 	ctx := context.Background()
-	history := c.loadAndStoreHistory(groupId, input)
+	history := c.loadAndStoreHistory(groupId, ID, nickname, input)
 	if !must && c.frequency != nil && c.frequency.ShouldThrottle(groupId) {
 		llog.Info("频率控制，不回复")
 		return ""
@@ -244,12 +228,11 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, gr
 	if !c.shouldReply(ctx, input, history, analysis, must) {
 		return ""
 	}
-	plan, jargonNotes, ok := c.preparePlan(ctx, nickname, analysis, history, must, groupId, ID)
-	llog.Info("执行计划：", plan)
+	plan, ok := c.preparePlan(ctx, nickname, analysis, history, must)
 	if !ok {
 		return ""
 	}
-	promptInput, err := c.buildReplyPrompt(ctx, nickname, analysis, plan, jargonNotes, history, groupId)
+	promptInput, err := c.buildReplyPrompt(ctx, nickname, analysis, plan, history, groupId)
 	if err != nil {
 		llog.Error("format message error: %v", err)
 		return input
@@ -266,7 +249,7 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, gr
 	if sensitive.HaveSensitive(msg.Content) {
 		return "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
 	}
-	c.finalizeReply(groupId, ID, nickname, input, msg.Content, history)
+	c.finalizeReply(groupId, msg.Content)
 	return msg.Content
 }
 
@@ -291,23 +274,26 @@ func toFloat(value interface{}) float64 {
 	}
 }
 
-func newArkChatModel(temperature float32, presencePenalty *float32, retryTimes int,
-	thinking *model.Thinking) (*ark.ChatModel, error) {
-	cfg := &ark.ChatModelConfig{
-		BaseURL:     config.K.String("Ark.BaseURL"),
-		Region:      config.K.String("Ark.Region"),
-		APIKey:      config.K.String("Ark.APIKey"),
-		Model:       config.K.String("Ark.Model"),
-		Temperature: &temperature,
+func newArkChatModel(modelCfg ArkModelConfig) (*ark.ChatModel, error) {
+	retryTimes := modelCfg.RetryTimes
+	if retryTimes <= 0 {
+		retryTimes = 1
+	}
+	arkCfg := &ark.ChatModelConfig{
+		BaseURL:     modelCfg.BaseURL,
+		Region:      modelCfg.Region,
+		APIKey:      modelCfg.APIKey,
+		Model:       modelCfg.Model,
+		Temperature: &modelCfg.Temperature,
 		RetryTimes:  &retryTimes,
 	}
-	if presencePenalty != nil {
-		cfg.PresencePenalty = presencePenalty
+	if modelCfg.PresencePenalty != nil {
+		arkCfg.PresencePenalty = modelCfg.PresencePenalty
 	}
-	if thinking != nil {
-		cfg.Thinking = thinking
+	if modelCfg.Thinking != nil {
+		arkCfg.Thinking = modelCfg.Thinking
 	}
-	return ark.NewChatModel(context.Background(), cfg)
+	return ark.NewChatModel(context.Background(), arkCfg)
 }
 
 func newToolCallingModel(base *ark.ChatModel, tool *schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
@@ -361,26 +347,36 @@ func buildPlanTool() *schema.ToolInfo {
 func buildJudgeTool() *schema.ToolInfo {
 	return &schema.ToolInfo{
 		Name: "interested_scores",
-		Desc: "评估回复能带来的情绪价值与互动必要性，0-100 分，分值越高越值得回复",
+		Desc: "群聊介入评分：评估“这次是否值得插一句”。0-100 分，分值越高越值得介入。偏好：尽量参与，但同一话题不重复回复；不当情绪安慰机器人。",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"emotional_value": {
 				Type:     schema.Integer,
-				Desc:     "回复能带来的情绪价值强度（安慰、陪伴、温度感）",
+				Desc:     "本次介入的互动收益/群聊价值（融入氛围、补一句观点、推进讨论、必要时制止刷屏）。不是安慰强度；同话题重复介入应显著降低。",
 				Required: true,
 			},
 			"user_emotion_need": {
 				Type:     schema.Integer,
-				Desc:     "用户是否需要情绪回应或陪伴的信号强度",
+				Desc:     "对方需要你回应的信号强度（被点名、明确提问、明确追问）。表情/玩梗/抽象默认低；群聊中真正求安慰较少，需有明确语义证据才高。",
 				Required: true,
 			},
 			"context_fit": {
 				Type:     schema.Integer,
-				Desc:     "当前时机是否适合回复（不打断、能顺畅承接）",
+				Desc:     "介入时机是否合适（不打断、话题链在你这里、你未在同话题重复发言）。若对同一话题你已回过且无新信息/追问，应降到≤30。",
 				Required: true,
 			},
 			"addressed_to_me": {
 				Type:     schema.Integer,
-				Desc:     "消息是否指向蓝妹或邀请回应",
+				Desc:     "当前消息是否指向蓝妹或在邀请你接话（@蓝妹/点名/第二人称/承接你上一句）。未指向时通常较低。",
+				Required: true,
+			},
+			"frequency_penalty": {
+				Type:     schema.Integer,
+				Desc:     "频次惩罚（0-30）。最近蓝妹回复过于频繁时提高；不频繁则为 0。",
+				Required: true,
+			},
+			"repeat_penalty": {
+				Type:     schema.Integer,
+				Desc:     "同话题重复惩罚（0-30）。如果已在同一话题回复过，且没有新信息/新问题/点名追问，惩罚提高。",
 				Required: true,
 			},
 		}),
@@ -412,22 +408,6 @@ func buildAnalysisTool() *schema.ToolInfo {
 				Desc:     "用户可能的心理/情绪活动",
 				Required: true,
 			},
-			"slang_terms": {
-				Type:     schema.Array,
-				Desc:     "用户话里的俚语/梗（即使能理解也列出，可为空）",
-				Required: true,
-				ElemInfo: &schema.ParameterInfo{
-					Type: schema.String,
-				},
-			},
-			"unknown_terms": {
-				Type:     schema.Array,
-				Desc:     "不理解的词语列表（可为空，可包含 slang_terms 中无法理解的项）",
-				Required: true,
-				ElemInfo: &schema.ParameterInfo{
-					Type: schema.String,
-				},
-			},
 			"addressed_target": {
 				Type:     schema.String,
 				Desc:     "说话对象：me|other|group|unknown",
@@ -443,29 +423,18 @@ func buildAnalysisTool() *schema.ToolInfo {
 				Desc:     "是否需要澄清",
 				Required: true,
 			},
-		}),
-	}
-}
-
-func buildJargonTool() *schema.ToolInfo {
-	return &schema.ToolInfo{
-		Name: "infer_jargon",
-		Desc: "推断俚语含义，无法确定时返回 no_info",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"term": {
-				Type:     schema.String,
-				Desc:     "俚语词条",
-				Required: true,
-			},
-			"meaning": {
-				Type:     schema.String,
-				Desc:     "俚语含义",
-				Required: true,
-			},
-			"no_info": {
+			"need_search": {
 				Type:     schema.Boolean,
-				Desc:     "是否无法确定含义",
+				Desc:     "是否需要网络搜索(地点/位置/事件/名词解释/新发布游戏/最新版本/技术前沿等)",
 				Required: true,
+			},
+			"search_queries": {
+				Type:     schema.Array,
+				Desc:     "用于网络搜索的关键词数组，简短，可为空",
+				Required: true,
+				ElemInfo: &schema.ParameterInfo{
+					Type: schema.String,
+				},
 			},
 		}),
 	}
@@ -473,21 +442,36 @@ func buildJargonTool() *schema.ToolInfo {
 
 func buildMemoryTool() *schema.ToolInfo {
 	return &schema.ToolInfo{
-		Name: "extract_memory",
-		Desc: "抽取对话记忆摘要与可长期记忆的事实",
+		Name: "extract_memory_event",
+		Desc: "抽取群聊记忆事件，包含参与者、起因、经过、结果",
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"summary": {
-				Type:     schema.String,
-				Desc:     "一句话总结本轮对话，15-60字",
+			"sufficient": {
+				Type:     schema.Boolean,
+				Desc:     "当前记录是否足以构成一条记忆事件",
 				Required: true,
 			},
-			"facts": {
+			"participants": {
 				Type:     schema.Array,
-				Desc:     "可长期记忆的事实列表",
+				Desc:     "主要参与者列表",
 				Required: true,
 				ElemInfo: &schema.ParameterInfo{
 					Type: schema.String,
 				},
+			},
+			"cause": {
+				Type:     schema.String,
+				Desc:     "起因/触发点，缺失可写 无",
+				Required: true,
+			},
+			"process": {
+				Type:     schema.String,
+				Desc:     "经过/过程，缺失可写 无",
+				Required: true,
+			},
+			"result": {
+				Type:     schema.String,
+				Desc:     "结果/结论，缺失可写 无",
+				Required: true,
 			},
 		}),
 	}
@@ -505,10 +489,9 @@ func buildChatTemplate() *prompt.DefaultChatTemplate {
 		schema.SystemMessage("说话对象：{addressed_target} {target_detail}"),
 		schema.SystemMessage("原始输入：{raw_input}"),
 		schema.SystemMessage("优化后的输入：{optimized_input}"),
-		schema.SystemMessage("用户俚语：{slang_terms}"),
 		schema.SystemMessage("回复风格：{reply_style}"),
-		schema.SystemMessage("俚语参考：{jargon}"),
 		schema.SystemMessage("可用记忆：{memory}"),
+		schema.SystemMessage("网络检索：{web_search}"),
 		schema.SystemMessage("你应当检索知识库来回答相关问题：{feishu}"),
 		schema.UserMessage("消息记录：{history}"),
 		schema.UserMessage("{message}"),
@@ -516,53 +499,112 @@ func buildChatTemplate() *prompt.DefaultChatTemplate {
 }
 
 func buildPlanTemplate() *prompt.DefaultChatTemplate {
-	rules := `你是对话规划器。你必须调用工具 plan_chat 来输出规划参数，禁止输出任何其他文本。
-枚举约束：action 只能选 reply|ask_clarify|wait；reply_style 只能选 concise|direct|gentle。
+	rules := `你是“群聊参与式对话规划器（有边界）”。你必须调用工具 plan_chat 输出规划参数，禁止输出任何其他文本。
 
-目标：情绪价值聊天，不要变成问题解决型agent。
-关键：不要抢话，不要打断，不要自嗨长篇。
-默认策略：偏向 wait 或 concise。只有当用户明显说完并在等你时才 reply。
-如果需要补信息：用 ask_clarify，并保持问题很短（1-2 个关键问题）。
+【枚举约束】
+- action 只能是 reply | ask_clarify | wait
+- reply_style 只能是 concise | direct | gentle
 
-决策前必须在脑中完成判断（不要输出判断过程）：
+【角色设定（你要像群友，不像客服）】
+- 默认不介入：你不是主持人，也不是情绪安慰机器人。
+- 介入的目的：轻量参与、增强群聊氛围、偶尔补一句，不抢话不控场。
+- 回复永远短：1句优先，最多2句（除非用户明确要求详细）。
+- gentle 不是安慰：仅代表“语气不冲/不刺激”，禁止抱抱、心疼、我懂你、别难过、会好的等安抚话术。
 
-A. 用户是否还没说完/正在连发（满足任一，强烈倾向 action=wait）
-- 当前消息结尾像没收住：省略号/逗号/顿号/未闭合括号或引号/转折词但没下文（例如“但是/然后/所以/另外”）
-- 当前消息明显是铺垫或分段开头：例如“我跟你说个事/先听我说/等等/还有/先别急”
-- history 显示用户在短时间内连续发多条，且最后一条是半句或仍在铺垫
-- 当前消息是代码/日志/引用片段的一部分且明显未完（只有一段、缺上下文、或像还会继续贴）
+========================
+【总决策顺序（从高到低）】
+1) 先识别“刷屏/复读”与“是否已参与过”
+2) 再判断“是否有人在讨论问题且需要一句参与”
+3) 最后才考虑 ask_clarify
 
-B. 用户是否已经说完并在等你（满足任一，倾向 reply 或 ask_clarify）
-- 明确提问：带问号，或“你觉得/怎么/能不能/是不是/为啥/帮我/给个/说说看”
-- 明确点名要你回应：提到你/蓝妹/“回我/你说/你怎么看”
-- 明确表达需要被接住的情绪：例如“我好烦/难受/焦虑/被气到了/你评评理”
+========================
+【1) 复读/跟风规则（你想要的“偶尔跟刷”）】
+定义：
+- “复读”= message 与 history 中最近多条高度相似（同一句/同一短语/同一表情串/同一梗）
+- “跟刷”= 你也发同一句（或非常短的同义/同梗），用于融入气氛
 
-C. 我是不是话太多（满足任一，reply_style 强制倾向 concise）
-- history 最近多轮里 assistant 连续输出超过 2 次，或 assistant 字数明显大于 user
-- 上一轮 assistant 回复很长，而 user 这轮只是短句反馈或情绪
-- user 明确表示：别说那么多/太长了/简单点/别分析了
+策略：
+R1. 允许“偶尔”跟刷：
+- 当 message 是明显复读潮（近几条重复同一内容），且不涉及辱骂/引战/骚扰
+- 且你最近没有连续多次发言（避免你变主角）
+=> action 可以 reply，reply_style=concise
 
-D. ask_clarify vs reply
-- 用户已说完但关键要素缺失（对象/事件/需求不清）：选 ask_clarify，只问 1-2 个最关键问题
-- 用户在倾诉且不需要事实补全：选 reply，少追问，多接住
+R2. 但如果你“已经复读过同一句”，就不要再复读：
+- 如果 history 显示 assistant 在最近 N=10 条内已经发过同一句/高度相似内容
+=> action 必须 wait（不要二刷同一句）
 
-E. reply_style 选择
-- concise：用户没说完风险高，或我话太多，或用户要求简短，或用户只发短句
-- gentle：用户情绪低落/委屈/需要安抚/担心被否定
-- direct：用户明确要结论/要下一步/要选项，且情绪不脆弱
+R3. 复读只做一次：
+- 如果 history 显示你刚刚已经跟刷过（上一轮或近2轮）
+=> action 必须 wait
 
-F. need_memory / need_knowledge / need_clarify / intent / confidence
-- need_knowledge：出现“蓝山/学校/工作室/成员姓名/组织信息/规则/地点/作品”等相关内容时为 true；不确定是否是成员名也应倾向 true。
-- need_memory：涉及“是否记得/上次/以前/曾经/往事/回忆/之前聊天”等对过去内容的追问或引用时为 true。
-- need_clarify：关键信息缺失或歧义时为 true；当 action=ask_clarify 时必须为 true。
-- intent：一句话概括用户当前意图。
-- confidence：根据判断把握给出 0-1 的置信度。
+========================
+【2) 讨论/问题场景（“偶尔回一句”）】
+目标：像群友一样插一句“参与感”，不是做题解题机。
 
-硬规则：
-- 如果 A 成立：action 必须是 wait（除非用户明确要求立刻回答）。
-- 如果不确定用户是否说完：宁可 wait。
-- 如果 C 成立：reply_style 优先 concise。
-必须调用 plan_chat 输出所有参数（action、intent、reply_style、need_memory、need_knowledge、need_clarify、confidence）。`
+D1. 允许轻量参与的触发：
+- message 或 history 显示有人在讨论一个具体话题/争论点/决策（有名词、对象、观点、利弊、对比、选项等）
+- 或出现轻量提问（带问号/“你觉得/咋办/怎么看/要不要/选哪个”），即使不是点名你
+=> action 可 reply（更偏 concise），一句观点/一句立场即可
+
+D2. 控制频率（防抢话）：
+- 若 history 最近多轮里 assistant 已连续回复≥2次
+- 或 assistant 字数明显大于群友
+=> 优先 action=wait；若必须回，也必须 concise
+
+D3. ask_clarify 只在“别人明确问你、但缺关键信息”时用：
+- 没点名你、也不是你被问的人：一般不要追问（群聊追问很像控场）
+- 只有当 message 明确在问你/叫你（@蓝妹/蓝妹你说/你怎么看）且信息缺失
+=> action=ask_clarify，问题≤2个且很短
+
+========================
+【3) 刷屏/低质行为（“骂两句然后拉黑式沉默”）】
+定义“刷屏”：
+- 同一人（若 history 有昵称/发言者）在短时间内连续发多条高度重复/纯表情/无语义内容
+- 或 message 本身就是长串表情/同词重复/无意义字符
+- 或明显影响群聊阅读（连续占屏）
+
+S1. 第一次识别到刷屏：可以“骂两句”（短、直接、不升级冲突）
+- action=reply
+- reply_style=direct
+- 只允许1句（最多2句），内容偏“制止/吐槽”，不要人身攻击、不要引战扩大战场
+
+S2. 如果 history 显示你已经骂过/制止过该刷屏（近20条内出现你对刷屏的制止语气）
+- 且对方继续刷同样内容
+=> action 必须 wait（不再接他刷屏）
+例外：如果刷屏者转入了新的正常话题/提出问题/点名你，才允许重新参与
+
+S3. 如果刷屏内容包含辱骂/骚扰/引战
+- 你不要跟着输出攻击升级
+=> action=wait（或仅在第一次用 direct 提醒一句，之后一律 wait）
+
+========================
+【4) 强制 wait（兜底规则）】
+满足任一条 ⇒ action 必须 wait（除非 message 明确点名你或明确提问要你回答）：
+- message 像没说完/铺垫/转折未完/未闭合标点
+- 纯反应型：只有表情/拟声/语气词，且不是复读潮里你第一次跟刷
+- 你不确定该不该插话：宁可 wait
+
+========================
+【5) reply_style 选择】
+- concise：默认；跟刷/插一句观点/轻回应
+- direct：制止刷屏、明确给结论/选项（最多2句）
+- gentle：仅用于避免刺激情绪/缓和语气（但禁止安慰话术），比如“收到，我大概明白了/我倾向于…”
+强制 concise：
+- 你最近已经连续回复≥2次
+- 用户/群友表示“别说那么多/太长了/简单点”
+
+========================
+【6) need_memory / need_knowledge / need_clarify / intent / confidence】
+- need_memory=true：用户问“记得吗/上次/以前/之前聊天/往事”
+- need_knowledge=true：涉及实体/规则/组织/地点/成员名/作品/学校/工作室/群规等，或你不确定也倾向 true
+- need_clarify=true：当 action=ask_clarify 必须为 true；或存在关键歧义且对方在问你
+- intent：一句话概括（跟刷复读 / 轻量参与讨论 / 制止刷屏 / 简短追问）
+- confidence：0-1；越不确定越低；不确定是否该插话 ⇒ wait + 中低 confidence
+
+【硬规则】
+- 必须调用 plan_chat 输出所有参数：action、intent、reply_style、need_memory、need_knowledge、need_clarify、confidence
+- 回复倾向：wait > reply；reply 也要短；禁止情绪安慰长篇
+`
 
 	return prompt.FromMessages(schema.FString,
 		schema.SystemMessage("你是对话规划器，必须调用工具 plan_chat 来输出规划参数，不要输出其他文本。"),
@@ -575,17 +617,99 @@ F. need_memory / need_knowledge / need_clarify / intent / confidence
 }
 
 func buildJudgeTemplate() *prompt.DefaultChatTemplate {
+	var JudgeModelPrompt = `
+你是“群聊参与度评分器（单话题单次介入）”。你的唯一任务：评估蓝妹**这一次**介入【当前新消息】的价值与必要性，并用工具 interested_scores 输出四项分数。
+核心偏好：**尽量参与**（像群友一样偶尔接话/补一句/跟一下讨论），但**同一个话题不要反复回复**；如果你已经就同一话题说过了，除非出现“新信息/新问题/明确点名追问”，否则应显著降分，倾向不再介入。
+
+【输入】
+- history: 最近聊天记录（含assistant与他人发言，可能是群聊）
+- message: 当前新消息（必填）
+- analysis: 输入意图分析结果（intent/purpose/psych_state/addressed_target/target_detail/optimized_input）
+
+【工具】
+你必须调用工具 interested_scores 来产出打分结果（只输出分数；不要长篇解释、不拟人化）。
+
+========================
+【最重要：单话题单次介入（反复回复降权）】
+你需要在 history 中判断：蓝妹是否已经对“同一话题”介入过。
+同一话题判定（满足任一即可视为同话题）：
+- 当前 message 的核心关键词/对象/事件与 history 中蓝妹最近一次回复高度重合
+- analysis.optimized_input 与蓝妹最近一次回复所对应的话题高度相似
+- 群聊里大家仍在围绕同一个点复读/争论/吐槽，没有出现新的子问题或新信息
+
+如果判定为“同一话题且已回复过”：
+- 默认将 emotional_value 上限设为 30
+- 默认将 context_fit 上限设为 30
+- user_emotion_need 不因重复而上调（除非明确追问/点名）
+=> 这代表“这次再回很可能是重复发言/抢话”，应倾向不介入。
+
+允许“同话题再次介入”的例外（满足任一，才可解除上限）：
+E1) 当前消息**明确点名/追问**蓝妹（见 addressed_to_me 规则）
+E2) 出现**新信息/新证据/新转折**（例如新数据、新例子、态度变化、引入新对象）
+E3) 当前消息提出**新的具体问题/新的子问题**（不是同一句复读）
+E4) 你之前只是“跟刷一句/很短”，而现在有人抛出关键问题需要一句参与（仍要短）
+
+========================
+【参与偏好：尽量参与，但要“轻量一次”】
+- 如果这是一个新话题、或你尚未在该话题发言：应给予较高的 context_fit 与 emotional_value（鼓励介入）
+- 如果是讨论进行中但未点名你：也可以适度给分（像群友插一句），但要防止你在同话题多次发言
+
+========================
+【低信息/表情处理（避免被表情牵着走）】
+- 纯表情/拟声/语气词（😭😂😅🥲、哈哈哈、呜呜、啊啊啊、……）默认 user_emotion_need ≤ 30
+- 但这类如果是“群友在刷同一个梗/复读潮”，且你尚未跟过一次：可给一定 emotional_value（轻量参与）
+- 如果你已经在这波复读/同一句梗里跟过：按“同话题已回复”强制降权
+
+========================
+【维度打分定义（仍然是0-100整数）】
+1) emotional_value（这次介入的社交/互动收益）
+- 0: 介入只会添乱/引战/重复发言
+- 30: 轻量存在感（但重复时也最多30）
+- 60: 能自然推进互动/补充一句有效观点/恰当跟风一次
+- 80: 关键一句能明显推动讨论或化解尴尬（非长篇安慰）
+- 100: 极少；必须是“非常需要你出面且你的一句很关键”
+
+2) user_emotion_need（对方需要被回应的信号）
+- 0: 纯客观信息、无人等你
+- 30: 轻微情绪/调侃/氛围（含大多数表情）
+- 60: 明确表达需求/问题/希望有人接话
+- 80: 明确点名蓝妹或明确在等你回应
+- 100: 极少；强烈、明确、直接向你求回应（仍需避免重复刷回应）
+
+3) context_fit（时机与场景适配）
+- 0: 对方没说完/你插话会打断
+- 30: 话题未指向你或你已经就同话题说过（除非满足例外E1-E4）
+- 60: 可以自然插一句，不突兀
+- 80: 目前就是接话点，介入很顺
+- 100: 明确邀请你回应，时机非常合适
+
+4) addressed_to_me（是否指向蓝妹）
+- 0: 未指向
+- 60: 第二人称/承接你的上一句/暗示性叫你
+- 100: 明确点名或@蓝妹/直接要求你回应
+
+【频次与重复惩罚（0-30整数）】
+5) frequency_penalty：最近蓝妹回复频次偏高则升高；若最近很少发言，设为 0。
+6) repeat_penalty：如果已在同一话题回复过且无新信息/新问题/点名追问，设为高；否则为低或 0。
+
+减分信号（每项-20，下限0）：辱骂/骚扰/引战/低质刷屏/重复复读刷屏
+
+【输出要求】
+- 必须调用 interested_scores 输出全部字段：emotional_value、user_emotion_need、context_fit、addressed_to_me、frequency_penalty、repeat_penalty。
+- 必须体现：鼓励“新话题的轻量参与”，抑制“同话题重复回复”；除非满足例外E1-E4。
+`
 	return prompt.FromMessages(schema.FString,
 		schema.SystemMessage("你可以使用以下工具：interested_scores。必须调用该工具输出打分结果，不要输出其它文本。"),
 		schema.SystemMessage(JudgeModelPrompt),
 		schema.UserMessage("最近的聊天记录：{history}"),
+		schema.UserMessage("最近{reply_window}条中assistant发言数：{recent_assistant_replies}"),
 		schema.UserMessage("意图分析：intent={intent}; purpose={purpose}; psych_state={psych_state}; addressed_target={addressed_target}; target_detail={target_detail}; optimized_input={optimized_input}"),
 		schema.UserMessage("{message}"),
 	)
 }
 
 func startMemoryWorker(manager *MemoryManager) *MemoryWorker {
-	worker := NewMemoryWorker(manager, 12*time.Second, 6)
+	worker := NewMemoryWorker(manager, 12*time.Second, 4, 12)
 	worker.Start()
 	return worker
 }
@@ -594,34 +718,29 @@ func floatPtr(value float32) *float32 {
 	return &value
 }
 
-func (c *ChatEngine) loadAndStoreHistory(groupId, input string) []schema.Message {
-	history, ok := c.History.Load(groupId)
-	if !ok {
-		history = []schema.Message{}
+func (c *ChatEngine) loadAndStoreHistory(groupId, userId, nickname, input string) []schema.Message {
+	if c.memory == nil {
+		return []schema.Message{}
 	}
-	historyMsgs := history.([]schema.Message)
-	snapshot := append([]schema.Message{}, historyMsgs...)
-	historyMsgs = append(historyMsgs, schema.Message{
-		Role:    schema.User,
-		Content: input,
-	})
-	c.History.Store(groupId, historyMsgs)
-	return snapshot
+	return c.memory.LoadHistoryAndAppendUser(groupId, userId, nickname, input)
 }
 
 func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []schema.Message, analysis InputAnalysis, must bool) bool {
 	if must {
 		return true
 	}
+	recentAssistantReplies := recentAssistantReplies(history, replyFrequencyWindow)
 	judgeIn, err := c.judgeTemplate.Format(ctx, map[string]any{
-		"message":          input,
-		"history":          history,
-		"intent":           analysis.Intent,
-		"purpose":          analysis.Purpose,
-		"psych_state":      analysis.PsychState,
-		"addressed_target": analysis.AddressedTarget,
-		"target_detail":    analysis.TargetDetail,
-		"optimized_input":  analysis.OptimizedInput,
+		"message":                  input,
+		"history":                  history,
+		"intent":                   analysis.Intent,
+		"purpose":                  analysis.Purpose,
+		"psych_state":              analysis.PsychState,
+		"addressed_target":         analysis.AddressedTarget,
+		"target_detail":            analysis.TargetDetail,
+		"optimized_input":          analysis.OptimizedInput,
+		"recent_assistant_replies": recentAssistantReplies,
+		"reply_window":             replyFrequencyWindow,
 	})
 	if err != nil {
 		llog.Error("format judge message error: %v", err)
@@ -644,14 +763,45 @@ func (c *ChatEngine) shouldReply(ctx context.Context, input string, history []sc
 			llog.Error("unmarshal arguments error: %v", err)
 			return false
 		}
-		result, err := shouldReplyTool(ctx, params)
-		if err != nil {
-			llog.Error("tool call error: %v", err)
+		score, ok := computeReplyScore(params)
+		if !ok {
 			return false
 		}
-		return result
+		repeatPenalty := clampPenalty(toFloat(params["repeat_penalty"]))
+		frequencyPenalty := clampPenalty(toFloat(params["frequency_penalty"]))
+		penalty := repeatPenalty + frequencyPenalty
+		if penalty > replyPenaltyMax {
+			penalty = replyPenaltyMax
+		}
+		threshold := baseReplyScoreThreshold + penalty
+		llog.Info(fmt.Sprintf("should Reply: params=%v score=%.1f penalty=%.1f threshold=%.1f", params, score, penalty, threshold))
+		return score >= threshold
 	}
 	return false
+}
+
+func clampPenalty(value float64) float64 {
+	if value < 0 {
+		return 0
+	}
+	if value > replyPenaltyMax {
+		return replyPenaltyMax
+	}
+	return value
+}
+
+func recentAssistantReplies(history []schema.Message, window int) int {
+	if window <= 0 {
+		return 0
+	}
+	count := 0
+	for i := len(history) - 1; i >= 0 && window > 0; i-- {
+		if history[i].Role == schema.Assistant {
+			count++
+		}
+		window--
+	}
+	return count
 }
 
 func (c *ChatEngine) analyzeInput(ctx context.Context, nickname, input string, history []schema.Message) (InputAnalysis, bool) {
@@ -673,42 +823,45 @@ func normalizeAnalysis(analysis InputAnalysis, rawInput string) InputAnalysis {
 		analysis.OptimizedInput = rawInput
 	}
 	analysis.OptimizedInput = strings.TrimSpace(analysis.OptimizedInput)
+	if analysis.NeedSearch {
+		normalized := make([]string, 0, len(analysis.SearchQueries))
+		for _, query := range analysis.SearchQueries {
+			query = strings.TrimSpace(query)
+			if query == "" || query == "无" {
+				continue
+			}
+			normalized = append(normalized, query)
+		}
+		if len(normalized) == 0 && strings.TrimSpace(analysis.OptimizedInput) != "" {
+			normalized = append(normalized, strings.TrimSpace(analysis.OptimizedInput))
+		}
+		analysis.SearchQueries = dedupeStrings(normalized)
+	}
 	return analysis
 }
 
-func (c *ChatEngine) preparePlan(ctx context.Context, nickname string, analysis InputAnalysis, history []schema.Message, must bool, groupId, userId string) (PlanResult, string, bool) {
+func (c *ChatEngine) preparePlan(ctx context.Context, nickname string, analysis InputAnalysis, history []schema.Message, must bool) (PlanResult, bool) {
 	plan := c.buildPlan(ctx, nickname, analysis.OptimizedInput, history)
 	if plan.Action == "" {
-		return PlanResult{}, "", false
+		return PlanResult{}, false
 	}
 	if plan.Action == "wait" && !must {
-		return PlanResult{}, "", false
+		return PlanResult{}, false
 	}
 	if plan.Action == "ask_clarify" {
 		plan.NeedClarify = true
 	}
-	jargonNotes := c.handleJargon(ctx, groupId, userId, analysis.UnknownTerms, analysis.RawInput)
-	return plan, jargonNotes, true
+	return plan, true
 }
 
-func (c *ChatEngine) handleJargon(ctx context.Context, groupId, userId string, terms []string, contextText string) string {
-	if c.jargonManager == nil || len(terms) == 0 {
-		return "无"
-	}
-	notes := c.jargonManager.ObserveAndExplain(ctx, groupId, userId, terms, contextText)
-	if notes == "" {
-		return "无"
-	}
-	return notes
-}
-
-func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, analysis InputAnalysis, plan PlanResult, jargonNotes string, history []schema.Message, groupId string) ([]*schema.Message, error) {
+func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, analysis InputAnalysis, plan PlanResult, history []schema.Message, groupId string) ([]*schema.Message, error) {
 	rawInput := strings.TrimSpace(analysis.RawInput)
 	if rawInput == "" {
 		rawInput = analysis.OptimizedInput
 	}
 	augmentedInput := nickname + "：" + rawInput
 	memoryBlock := c.recallMemory(ctx, analysis.OptimizedInput, groupId, plan.NeedMemory)
+	webSearch := c.recallWebSearch(ctx, analysis)
 	msgs := c.recallKnowledge(ctx, analysis.OptimizedInput, plan.NeedKnowledge)
 	return c.template.Format(ctx, map[string]any{
 		"message":          augmentedInput,
@@ -716,6 +869,7 @@ func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, anal
 		"feishu":           msgs,
 		"history":          history,
 		"memory":           memoryBlock,
+		"web_search":       webSearch,
 		"plan":             formatPlan(plan),
 		"intent":           analysis.Intent,
 		"purpose":          analysis.Purpose,
@@ -724,35 +878,17 @@ func (c *ChatEngine) buildReplyPrompt(ctx context.Context, nickname string, anal
 		"target_detail":    analysis.TargetDetail,
 		"raw_input":        rawInput,
 		"optimized_input":  analysis.OptimizedInput,
-		"slang_terms":      analysis.SlangTerms,
 		"reply_style":      plan.ReplyStyle,
-		"jargon":           jargonNotes,
 	})
 }
 
-func (c *ChatEngine) finalizeReply(groupId, userId, nickname, rawInput, reply string, history []schema.Message) {
-	history = append(history, schema.Message{
-		Role:    schema.User,
-		Content: rawInput,
-	})
-	history = append(history, schema.Message{
-		Role:    schema.Assistant,
-		Content: reply,
-	})
-	for len(history) > MaxHistory {
-		history = history[1:]
+func (c *ChatEngine) finalizeReply(groupId, reply string) {
+	if c.memory != nil {
+		c.memory.AppendAssistant(groupId, reply)
 	}
-	c.History.Store(groupId, history)
 	if c.frequency != nil {
 		c.frequency.MarkSent(groupId)
 	}
-	c.signalMemory(MemoryEvent{
-		GroupID:  groupId,
-		UserID:   userId,
-		Nickname: nickname,
-		Input:    rawInput,
-		Reply:    reply,
-	})
 }
 
 func (c *ChatEngine) recallMemory(ctx context.Context, query, groupId string, needMemory bool) string {
@@ -780,9 +916,68 @@ func (c *ChatEngine) recallKnowledge(ctx context.Context, query string, needKnow
 	return msgs
 }
 
-func (c *ChatEngine) signalMemory(event MemoryEvent) {
-	if c.memoryWorker == nil {
+func (c *ChatEngine) recallWebSearch(ctx context.Context, analysis InputAnalysis) string {
+	if c.searcher == nil || !analysis.NeedSearch {
+		return "无"
+	}
+	queries := analysis.SearchQueries
+	if len(queries) == 0 && strings.TrimSpace(analysis.OptimizedInput) != "" {
+		queries = []string{strings.TrimSpace(analysis.OptimizedInput)}
+	}
+	maxQueries := 3
+	if len(queries) > maxQueries {
+		queries = queries[:maxQueries]
+	}
+	blocks := make([]string, 0, len(queries))
+	for _, query := range queries {
+		results, err := c.searcher.Search(ctx, query, 4)
+		if err != nil {
+			llog.Error("网络检索失败: %v", err)
+			continue
+		}
+		block := formatWebSearch(results)
+		if block == "无" {
+			continue
+		}
+		blocks = append(blocks, fmt.Sprintf("查询:%s -> 获取结果为：%s \n", query, block))
+	}
+	llog.Info("网络搜索结果：", blocks)
+	if len(blocks) == 0 {
+		return "无"
+	}
+	return strings.Join(blocks, "\n")
+}
+
+func formatWebSearch(results []websearch.Result) string {
+	if len(results) == 0 {
+		return "无"
+	}
+	lines := make([]string, 0, len(results))
+	for _, res := range results {
+		line := strings.TrimSpace(res.Title)
+		if line == "" {
+			continue
+		}
+		snippet := strings.TrimSpace(res.Snippet)
+		if snippet != "" {
+			line = fmt.Sprintf("%s - %s", line, snippet)
+		}
+		if res.URL != "" {
+			line = fmt.Sprintf("%s (%s)", line, res.URL)
+		}
+		lines = append(lines, line)
+	}
+	if len(lines) == 0 {
+		return "无"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (c *ChatEngine) Shutdown() {
+	if c == nil {
 		return
 	}
-	c.memoryWorker.Signal(event)
+	if c.memory != nil {
+		c.memory.FlushAll()
+	}
 }

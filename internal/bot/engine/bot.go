@@ -6,6 +6,9 @@ import (
 	"LanMei/internal/bot/config"
 	"LanMei/internal/bot/utils/file"
 	"LanMei/internal/bot/utils/sensitive"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/gin-gonic/gin"
 	zero "github.com/wdvxdr1123/ZeroBot"
@@ -17,6 +20,16 @@ func InitBotEngine() {
 	command.InitWordCloud()
 	file.InitFileUploader(nil)
 	sensitive.InitFilter()
+
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-shutdown
+		if logic.Processor != nil {
+			logic.Processor.Shutdown()
+		}
+		os.Exit(0)
+	}()
 
 	// 注册处理函数
 	zero.OnMessage(func(ctx *zero.Ctx) bool {

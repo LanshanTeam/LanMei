@@ -5,6 +5,7 @@ services:
     restart: always
     depends_on:
       - postgres
+      - openserp
     ports:
       - "8080:8080"
     networks:
@@ -25,9 +26,10 @@ services:
     networks:
       - app-network
   pmhq:
-    image: linyuchen/pmhq:7.0.6
+    image: linyuchen/pmhq:7.0.7
     container_name: pmhq
     privileged: true
+    restart: always
     environment:
       - ENABLE_HEADLESS=false
     networks:
@@ -36,8 +38,9 @@ services:
       - qq_volume:/root/.config/QQ
 
   llbot:
-    image: linyuchen/llbot:7.7.0
+    image: linyuchen/llbot:7.7.2
     container_name: llonebot
+    restart: always
     ports:
       - "3080:3080"
     extra_hosts:
@@ -52,6 +55,14 @@ services:
       - ./llbot_config:/app/llbot/data:rw
     depends_on:
       - pmhq
+
+  openserp:
+    image: karust/openserp:latest
+    container_name: openserp
+    restart: always
+    command: ["serve", "-a", "0.0.0.0", "-p", "7000"]
+    networks:
+      - app-network
 
 volumes:
   qq_volume:

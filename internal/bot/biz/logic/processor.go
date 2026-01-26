@@ -4,6 +4,7 @@ import (
 	"LanMei/internal/bot/biz/command"
 	"LanMei/internal/bot/biz/llmchat"
 	"LanMei/internal/bot/biz/logic/default_plugins"
+	"LanMei/internal/bot/biz/logic/process_context"
 	"LanMei/internal/bot/utils/limiter"
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/sensitive"
@@ -11,12 +12,14 @@ import (
 	"strings"
 
 	zero "github.com/wdvxdr1123/ZeroBot"
+	"github.com/wdvxdr1123/ZeroBot/message"
 )
 
 type ProcessorImpl struct {
 	limiter    *limiter.Limiter
 	Plugins    []Plugin
 	chatEngine *llmchat.ChatEngine
+	Context    *process_context.Context
 }
 
 type Plugin interface {
@@ -30,23 +33,6 @@ type Plugin interface {
 }
 
 var Processor *ProcessorImpl
-
-// 指令
-const (
-	PING        = "/ping"
-	RANDOM_SIGN = "/试试手气"
-	NORMAL_SIGN = "/签到"
-	RANK        = "/排名"
-	SET_NAME    = "/设置昵称"
-	TAROT       = "/抽塔罗牌"
-	DAILY_LUCK  = "/今日运势"
-	WCLOUD      = "/wcloud"
-	DAYSENTENCE = "/每日一句"
-	HTTPCAT1    = "/猫猫"
-	HTTPCAT2    = "/哈基米"
-	WEATHER     = "/天气"
-	BALOGO      = "/logo"
-)
 
 var DefaultPlugins = []Plugin{
 	&default_plugins.WcloudPlugin{},
@@ -66,6 +52,7 @@ func NewProcessor() ProcessorImpl {
 		limiter:    limiter.NewLimiter(),
 		chatEngine: llmchat.NewChatEngine(),
 		Plugins:    DefaultPlugins,
+		Context:    process_context.NewContext(),
 	}
 	return *Processor
 }
@@ -73,11 +60,26 @@ func NewProcessor() ProcessorImpl {
 // 处理消息
 func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	llog.Info("@事件触发！")
+	p.Context.Append(ctx.Event.GroupID, process_context.Message{
+		Id:       ctx.Event.MessageID.(int64),
+		SenderId: ctx.Event.Sender.ID,
+		Content:  input,
+		AppearIn: ctx.Event.RawEvent.Time(),
+	})
 	msg := p.MessageProcess(input, ctx)
 	if msg == "" {
 		return nil
 	}
-	ctx.Send(msg)
+	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.MessageID.(int64), 3) {
+		llog.Info("回复模式")
+		ctx.Send(message.ReplyWithMessage(
+			ctx.Event.MessageID, message.Text(msg),
+		))
+		return nil
+	}
+	ctx.Send(message.Message{
+		message.Text(msg),
+	})
 	return nil
 }
 
@@ -99,6 +101,15 @@ func (p *ProcessorImpl) AddPlugin(plugin Plugin) {
 	p.Plugins = append(p.Plugins, plugin)
 }
 
+func (p *ProcessorImpl) Shutdown() {
+	if p == nil {
+		return
+	}
+	if p.chatEngine != nil {
+		p.chatEngine.Shutdown()
+	}
+}
+
 // MessageProcess 生成回复消息。
 func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 	var msg string
@@ -109,7 +120,7 @@ func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 		llog.Info("重复消息: ", input)
 		return ""
 	} else if sensitive.HaveSensitive(input) {
-		msg = "唔唔~小蓝的数据库里没有这种词哦，要不要换个萌萌的说法呀~(>ω<)"
+		msg = ""
 	} else {
 		switch {
 		case len(strings.TrimSpace(input)) == 0 || len(input) > 2000:

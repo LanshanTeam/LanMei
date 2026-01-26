@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"strings"
 
 	embed "github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/pgvector/pgvector-go"
@@ -33,14 +34,8 @@ func (EmbeddingRecord) TableName() string {
 var CollectionName = "LanMei-Embed"
 
 func NewEmbeddingManager(db *gorm.DB) *EmbeddingManagerImpl {
-	var RetryTimes int = 1
-	embedder, err := embed.NewEmbedder(context.Background(), &embed.EmbeddingConfig{
-		BaseURL:    config.K.String("Ark.BaseURL"),
-		Region:     config.K.String("Ark.Region"),
-		APIKey:     config.K.String("Ark.APIKey"),
-		Model:      config.K.String("Ark.EmbedModel"),
-		RetryTimes: &RetryTimes,
-	})
+	cfg := loadEmbedConfig()
+	embedder, err := embed.NewEmbedder(context.Background(), cfg)
 	if err != nil {
 		llog.Fatal("初始化向量模型失败", err)
 		return nil
@@ -50,6 +45,44 @@ func NewEmbeddingManager(db *gorm.DB) *EmbeddingManagerImpl {
 		embedder: embedder,
 	}
 	return m
+}
+
+func loadEmbedConfig() *embed.EmbeddingConfig {
+	retryTimes := 1
+	if config.K != nil {
+		if config.K.Exists("Ark.Embed.RetryTimes") {
+			retryTimes = config.K.Int("Ark.Embed.RetryTimes")
+		} else if config.K.Exists("Ark.RetryTimes") {
+			retryTimes = config.K.Int("Ark.RetryTimes")
+		}
+	}
+	baseURL := readConfigString("Ark.Embed.BaseURL", "Ark.BaseURL")
+	region := readConfigString("Ark.Embed.Region", "Ark.Region")
+	apiKey := readConfigString("Ark.Embed.APIKey", "Ark.APIKey")
+	model := readConfigString("Ark.Embed.Model", "Ark.EmbedModel", "Ark.Model")
+	return &embed.EmbeddingConfig{
+		BaseURL:    baseURL,
+		Region:     region,
+		APIKey:     apiKey,
+		Model:      model,
+		RetryTimes: &retryTimes,
+	}
+}
+
+func readConfigString(keys ...string) string {
+	if config.K == nil {
+		return ""
+	}
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		value := strings.TrimSpace(config.K.String(key))
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type PointF64 struct {
