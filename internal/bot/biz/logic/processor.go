@@ -61,7 +61,7 @@ func NewProcessor() ProcessorImpl {
 func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	llog.Info("@事件触发！")
 	p.Context.Append(ctx.Event.GroupID, process_context.Message{
-		Id:       ctx.Event.Time,
+		Id:       ctx.Event.MessageID.(int64),
 		SenderId: ctx.Event.Sender.ID,
 		Content:  input,
 		AppearIn: ctx.Event.RawEvent.Time(),
@@ -70,7 +70,7 @@ func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	if msg == "" {
 		return nil
 	}
-	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.Time, 3) {
+	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.MessageID.(int64), 3) {
 		llog.Info("回复模式")
 		ctx.Send(message.ReplyWithMessage(
 			ctx.Event.MessageID, message.Text(msg),
