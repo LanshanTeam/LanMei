@@ -32,22 +32,25 @@ const (
 )
 
 type ChatEngine struct {
-	ReplyTable    *feishu.ReplyTable
-	Model         fmodel.BaseChatModel
-	template      *prompt.DefaultChatTemplate
-	JudgeModel    fmodel.ToolCallingChatModel
-	judgeTemplate *prompt.DefaultChatTemplate
-	plannerModel  fmodel.ToolCallingChatModel
-	planTemplate  *prompt.DefaultChatTemplate
-	reranker      *rerank.Reranker
-	memory        *memory.MemoryManager
-	searcher      *websearch.Client
-	inputAnalyzer *analysis.InputAnalyzer
-	frequency     *FrequencyControlManager
-	hooks         *hooks.Runner
-	chatHookInfo  hooks.CallInfo
-	judgeHookInfo hooks.CallInfo
-	planHookInfo  hooks.CallInfo
+	ReplyTable     *feishu.ReplyTable
+	Model          fmodel.BaseChatModel
+	template       *prompt.DefaultChatTemplate
+	JudgeModel     fmodel.ToolCallingChatModel
+	judgeTemplate  *prompt.DefaultChatTemplate
+	plannerModel   fmodel.ToolCallingChatModel
+	planTemplate   *prompt.DefaultChatTemplate
+	searchModel    fmodel.BaseChatModel
+	searchTemplate *prompt.DefaultChatTemplate
+	reranker       *rerank.Reranker
+	memory         *memory.MemoryManager
+	searcher       *websearch.Client
+	inputAnalyzer  *analysis.InputAnalyzer
+	frequency      *FrequencyControlManager
+	hooks          *hooks.Runner
+	chatHookInfo   hooks.CallInfo
+	judgeHookInfo  hooks.CallInfo
+	planHookInfo   hooks.CallInfo
+	searchHookInfo hooks.CallInfo
 }
 
 func NewChatEngine() *ChatEngine {
@@ -81,6 +84,11 @@ func NewChatEngine() *ChatEngine {
 		llog.Fatal("LLM 节点 Memory 缺少 Type 配置")
 		return nil
 	}
+	searchFormatConfig := llmmodel.LoadNodeConfig("SearchFormat")
+	if searchFormatConfig.Provider == "" {
+		llog.Fatal("LLM 节点 SearchFormat 缺少 Type 配置")
+		return nil
+	}
 	plannerModel, err := llmmodel.NewToolCallingChatModel(plannerConfig, buildPlanTool())
 	if err != nil {
 		llog.Fatal("初始化 planner 工具失败", err)
@@ -101,6 +109,12 @@ func NewChatEngine() *ChatEngine {
 		llog.Fatal("初始化 memory 提取工具失败", err)
 		return nil
 	}
+	searchModel, err := llmmodel.NewChatModel(searchFormatConfig)
+	if err != nil {
+		llog.Fatal("初始化 search_format 模型失败", err)
+		return nil
+	}
+	searchTemplate := buildSearchFormatTemplate()
 	template := buildChatTemplate()
 	planTemplate := buildPlanTemplate()
 	judgeTemplate := buildJudgeTemplate()
@@ -110,6 +124,7 @@ func NewChatEngine() *ChatEngine {
 	planHookInfo := hooks.CallInfo{Node: "planner", Model: plannerConfig.Model}
 	analysisHookInfo := hooks.CallInfo{Node: "analysis", Model: analysisConfig.Model}
 	memoryHookInfo := hooks.CallInfo{Node: "memory", Model: memoryConfig.Model}
+	searchHookInfo := hooks.CallInfo{Node: "search_format", Model: searchFormatConfig.Model}
 	reranker := rerank.NewReranker(
 		config.K.String("Infini.APIKey"),
 		config.K.String("Infini.Model"),
@@ -126,22 +141,25 @@ func NewChatEngine() *ChatEngine {
 	searcher := websearch.NewClient()
 
 	return &ChatEngine{
-		ReplyTable:    reply,
-		Model:         chatModel,
-		JudgeModel:    judgeModel,
-		template:      template,
-		judgeTemplate: judgeTemplate,
-		plannerModel:  plannerModel,
-		planTemplate:  planTemplate,
-		reranker:      reranker,
-		memory:        memoryManager,
-		searcher:      searcher,
-		inputAnalyzer: inputAnalyzer,
-		frequency:     NewFrequencyControlManager(),
-		hooks:         hookRunner,
-		chatHookInfo:  chatHookInfo,
-		judgeHookInfo: judgeHookInfo,
-		planHookInfo:  planHookInfo,
+		ReplyTable:     reply,
+		Model:          chatModel,
+		JudgeModel:     judgeModel,
+		template:       template,
+		judgeTemplate:  judgeTemplate,
+		plannerModel:   plannerModel,
+		planTemplate:   planTemplate,
+		searchModel:    searchModel,
+		searchTemplate: searchTemplate,
+		reranker:       reranker,
+		memory:         memoryManager,
+		searcher:       searcher,
+		inputAnalyzer:  inputAnalyzer,
+		frequency:      NewFrequencyControlManager(),
+		hooks:          hookRunner,
+		chatHookInfo:   chatHookInfo,
+		judgeHookInfo:  judgeHookInfo,
+		planHookInfo:   planHookInfo,
+		searchHookInfo: searchHookInfo,
 	}
 }
 
@@ -430,7 +448,8 @@ func (c *ChatEngine) recallWebSearch(ctx context.Context, analysis analysis.Inpu
 	if len(blocks) == 0 {
 		return "无"
 	}
-	return strings.Join(blocks, "\n")
+	raw := strings.Join(blocks, "\n")
+	return c.formatSearchResults(ctx, analysis.RawInput, queries, raw)
 }
 
 func formatWebSearch(results []websearch.Result) string {
@@ -456,6 +475,37 @@ func formatWebSearch(results []websearch.Result) string {
 		return "无"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (c *ChatEngine) formatSearchResults(ctx context.Context, input string, queries []string, raw string) string {
+	if c == nil || c.searchModel == nil || c.searchTemplate == nil {
+		return raw
+	}
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "无" {
+		return raw
+	}
+	in, err := c.searchTemplate.Format(ctx, map[string]any{
+		"input":       input,
+		"queries":     strings.Join(queries, "、"),
+		"raw_results": raw,
+	})
+	if err != nil {
+		llog.Error("format search summary error: %v", err)
+		return raw
+	}
+	msg, err := hooks.Run(ctx, c.hooks, c.searchHookInfo, func() (*schema.Message, error) {
+		return c.searchModel.Generate(ctx, in)
+	})
+	if err != nil {
+		llog.Error("generate search summary error: %v", err)
+		return raw
+	}
+	content := strings.TrimSpace(msg.Content)
+	if content == "" {
+		return raw
+	}
+	llog.Info("格式化后的结果", content)
+	return content
 }
 
 func (c *ChatEngine) Shutdown() {

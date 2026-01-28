@@ -1,6 +1,6 @@
 data/
 .env
-manifest/
+manifest/config.yaml
 LanMei
 output.log
 .idea
