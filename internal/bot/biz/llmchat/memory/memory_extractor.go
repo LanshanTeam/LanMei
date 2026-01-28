@@ -1,6 +1,7 @@
-package llmchat
+package memory
 
 import (
+	"LanMei/internal/bot/biz/llmchat/hooks"
 	"LanMei/internal/bot/utils/llog"
 	"context"
 	"encoding/json"
@@ -23,9 +24,11 @@ type MemoryExtraction struct {
 type MemoryExtractor struct {
 	model    fmodel.ToolCallingChatModel
 	template *prompt.DefaultChatTemplate
+	hooks    *hooks.Runner
+	hookInfo hooks.CallInfo
 }
 
-func NewMemoryExtractor(model fmodel.ToolCallingChatModel) *MemoryExtractor {
+func NewMemoryExtractor(model fmodel.ToolCallingChatModel, hookRunner *hooks.Runner, hookInfo hooks.CallInfo) *MemoryExtractor {
 	template := prompt.FromMessages(schema.FString,
 		schema.SystemMessage("你是群聊记忆整理器，必须调用工具 extract_memory_event 输出参数，不要输出其他文本。"),
 		schema.SystemMessage("任务：把下面的聊天记录合并成一条记忆事件，提取主要参与者、起因、经过、结果。"),
@@ -38,6 +41,8 @@ func NewMemoryExtractor(model fmodel.ToolCallingChatModel) *MemoryExtractor {
 	return &MemoryExtractor{
 		model:    model,
 		template: template,
+		hooks:    hookRunner,
+		hookInfo: hookInfo,
 	}
 }
 
@@ -54,12 +59,14 @@ func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, mess
 		"events_text": formatMemoryMessages(messages),
 	})
 	if err != nil {
-		llog.Error("format memory extractor prompt error: %v", err)
+		llog.Errorf("format memory extractor prompt error: %v", err)
 		return MemoryExtraction{}
 	}
-	msg, err := e.model.Generate(ctx, in)
+	msg, err := hooks.Run(ctx, e.hooks, e.hookInfo, func() (*schema.Message, error) {
+		return e.model.Generate(ctx, in)
+	})
 	if err != nil {
-		llog.Error("generate memory extraction error: %v", err)
+		llog.Errorf("generate memory extraction error: %v", err)
 		return MemoryExtraction{}
 	}
 	for _, tc := range msg.ToolCalls {
@@ -68,7 +75,7 @@ func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, mess
 		}
 		var result MemoryExtraction
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &result); err != nil {
-			llog.Error("解析记忆提取工具参数失败: %v", err)
+			llog.Errorf("解析记忆提取工具参数失败: %v", err)
 			break
 		}
 		result.Cause = strings.TrimSpace(result.Cause)
@@ -86,6 +93,43 @@ func (e *MemoryExtractor) ExtractBatch(ctx context.Context, groupID string, mess
 		return result
 	}
 	return MemoryExtraction{}
+}
+
+func BuildTool() *schema.ToolInfo {
+	return &schema.ToolInfo{
+		Name: "extract_memory_event",
+		Desc: "抽取群聊记忆事件，包含参与者、起因、经过、结果",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"sufficient": {
+				Type:     schema.Boolean,
+				Desc:     "当前记录是否足以构成一条记忆事件",
+				Required: true,
+			},
+			"participants": {
+				Type:     schema.Array,
+				Desc:     "主要参与者列表",
+				Required: true,
+				ElemInfo: &schema.ParameterInfo{
+					Type: schema.String,
+				},
+			},
+			"cause": {
+				Type:     schema.String,
+				Desc:     "起因/触发点，缺失可写 无",
+				Required: true,
+			},
+			"process": {
+				Type:     schema.String,
+				Desc:     "经过/过程，缺失可写 无",
+				Required: true,
+			},
+			"result": {
+				Type:     schema.String,
+				Desc:     "结果/结论，缺失可写 无",
+				Required: true,
+			},
+		}),
+	}
 }
 
 func formatMemoryMessages(messages []MemoryMessage) string {

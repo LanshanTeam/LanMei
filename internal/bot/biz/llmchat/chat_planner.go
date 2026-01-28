@@ -1,6 +1,8 @@
 package llmchat
 
 import (
+	"LanMei/internal/bot/biz/llmchat/analysis"
+	"LanMei/internal/bot/biz/llmchat/hooks"
 	"LanMei/internal/bot/utils/llog"
 	"context"
 	"encoding/json"
@@ -19,20 +21,32 @@ type PlanResult struct {
 	Confidence    float64 `json:"confidence"`
 }
 
-func (c *ChatEngine) buildPlan(ctx context.Context, nickname, input string, history []schema.Message) PlanResult {
+func (c *ChatEngine) buildPlan(ctx context.Context, nickname string, analysisResult analysis.InputAnalysis, history []schema.Message) PlanResult {
 	if c.planTemplate == nil || c.plannerModel == nil {
 		return PlanResult{}
 	}
+	message := strings.TrimSpace(analysisResult.OptimizedInput)
+	if message == "" {
+		message = strings.TrimSpace(analysisResult.RawInput)
+	}
 	in, err := c.planTemplate.Format(ctx, map[string]any{
-		"nickname": nickname,
-		"history":  history,
-		"message":  input,
+		"nickname":         nickname,
+		"history":          history,
+		"message":          message,
+		"intent":           analysisResult.Intent,
+		"purpose":          analysisResult.Purpose,
+		"psych_state":      analysisResult.PsychState,
+		"addressed_target": analysisResult.AddressedTarget,
+		"target_detail":    analysisResult.TargetDetail,
+		"optimized_input":  analysisResult.OptimizedInput,
 	})
 	if err != nil {
 		llog.Error("format plan message error: %v", err)
 		return PlanResult{}
 	}
-	msg, err := c.plannerModel.Generate(ctx, in)
+	msg, err := hooks.Run(ctx, c.hooks, c.planHookInfo, func() (*schema.Message, error) {
+		return c.plannerModel.Generate(ctx, in)
+	})
 	if err != nil {
 		llog.Error("generate plan error: %v", err)
 		return PlanResult{}

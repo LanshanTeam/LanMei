@@ -13,6 +13,7 @@ import (
 	embed "github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/pgvector/pgvector-go"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type EmbeddingManagerImpl struct {
@@ -24,7 +25,7 @@ type EmbeddingRecord struct {
 	Collection  string          `gorm:"column:collection;primaryKey;type:text"`
 	ID          uint64          `gorm:"column:id;primaryKey"`
 	Embedding   pgvector.Vector `gorm:"column:embedding;type:vector(4096)"`
-	PayloadJSON string          `gorm:"column:payload_json;type:jsonb"`
+	PayloadJSON json.RawMessage `gorm:"column:payload_json;type:jsonb"`
 }
 
 func (EmbeddingRecord) TableName() string {
@@ -116,46 +117,20 @@ func f64ToF32(vec []float64) ([]float32, error) {
 	return out, nil
 }
 
-func (m *EmbeddingManagerImpl) UpdateKnowledge(ctx context.Context, datas []feishu.KeyValue, colletion string) {
+func (m *EmbeddingManagerImpl) UpdateKnowledge(ctx context.Context, datas []feishu.KeyValue, collection string) {
 	llog.Debug("", datas)
 	if len(datas) == 0 {
 		return
 	}
-	strs := make([]string, 0, len(datas))
+	items := make([]EmbeddingItem, 0, len(datas))
 	for _, data := range datas {
-		strs = append(strs, data.Value)
+		items = append(items, EmbeddingItem{
+			ID:   uint64(data.Key),
+			Text: data.Value,
+		})
 	}
-	embeddings, err := m.embedder.EmbedStrings(ctx, strs)
-	if err != nil {
-		llog.Error("知识库向量化失败", err)
-		return
-	}
-	if len(embeddings) != len(datas) {
-		llog.Error("embedding 数量与文本数不一致", "embN", len(embeddings), "dataN", len(datas))
-		return
-	}
-
-	db := m.db.WithContext(ctx)
-	for i, vecF64 := range embeddings {
-		vecF32, err := f64ToF32(vecF64)
-		if err != nil {
-			llog.Error("向量转换失败", "i", i, "err", err)
-			continue
-		}
-
-		payload, err := json.Marshal([]string{datas[i].Value})
-		if err != nil {
-			llog.Error("payload 序列化失败", "i", i, "err", err)
-			continue
-		}
-		vec := pgvector.NewVector(vecF32)
-		if err := db.Exec(`INSERT INTO embeddings (collection, id, embedding, payload_json)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT (collection, id) DO UPDATE SET embedding = EXCLUDED.embedding, payload_json = EXCLUDED.payload_json`,
-			colletion, uint64(datas[i].Key), vec, string(payload)).Error; err != nil {
-			llog.Error("Postgres Upsert 失败", err)
-			return
-		}
+	if err := m.UpsertTextItems(ctx, collection, items); err != nil {
+		llog.Error("更新向量库失败", err)
 	}
 }
 
@@ -163,31 +138,28 @@ func (m *EmbeddingManagerImpl) UpsertTextItems(ctx context.Context, collection s
 	if len(items) == 0 {
 		return nil
 	}
+	filtered := make([]EmbeddingItem, 0, len(items))
 	strs := make([]string, 0, len(items))
 	for _, item := range items {
-		if item.Text == "" {
+		if strings.TrimSpace(item.Text) == "" {
 			continue
 		}
+		filtered = append(filtered, item)
 		strs = append(strs, item.Text)
 	}
-	if len(strs) == 0 {
+	if len(filtered) == 0 {
 		return nil
 	}
 	embeddings, err := m.embedder.EmbedStrings(ctx, strs)
 	if err != nil {
 		return err
 	}
-	if len(embeddings) != len(strs) {
+	if len(embeddings) != len(filtered) {
 		return errors.New("embedding count mismatch")
 	}
-	db := m.db.WithContext(ctx)
-	idx := 0
-	for _, item := range items {
-		if item.Text == "" {
-			continue
-		}
-		vecF64 := embeddings[idx]
-		idx++
+	records := make([]EmbeddingRecord, 0, len(filtered))
+	for i, item := range filtered {
+		vecF64 := embeddings[i]
 		vecF32, err := f64ToF32(vecF64)
 		if err != nil {
 			llog.Error("向量转换失败", "err", err)
@@ -198,16 +170,21 @@ func (m *EmbeddingManagerImpl) UpsertTextItems(ctx context.Context, collection s
 			llog.Error("payload 序列化失败", "err", err)
 			continue
 		}
-		vec := pgvector.NewVector(vecF32)
-		if err := db.Exec(`INSERT INTO embeddings (collection, id, embedding, payload_json)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT (collection, id) DO UPDATE SET embedding = EXCLUDED.embedding, payload_json = EXCLUDED.payload_json`,
-			collection, item.ID, vec, string(payload)).Error; err != nil {
-			llog.Error("Postgres Upsert 失败", err)
-			return err
-		}
+		records = append(records, EmbeddingRecord{
+			Collection:  collection,
+			ID:          item.ID,
+			Embedding:   pgvector.NewVector(vecF32),
+			PayloadJSON: payload,
+		})
 	}
-	return nil
+	if len(records) == 0 {
+		return nil
+	}
+	db := m.db.WithContext(ctx)
+	return db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "collection"}, {Name: "id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"embedding", "payload_json"}),
+	}).CreateInBatches(records, 200).Error
 }
 
 // ====== TopK：查询向量只收 float64，返回 payload 为 map[string][]string ======
@@ -221,21 +198,21 @@ func (m *EmbeddingManagerImpl) SearchTopKF64(ctx context.Context, collection str
 	}
 	vec := pgvector.NewVector(q32)
 	type row struct {
-		ID          uint64  `gorm:"column:id"`
-		PayloadJSON string  `gorm:"column:payload_json"`
-		Distance    float64 `gorm:"column:distance"`
+		ID          uint64          `gorm:"column:id"`
+		PayloadJSON json.RawMessage `gorm:"column:payload_json"`
+		Distance    float64         `gorm:"column:distance"`
 	}
 	var rows []row
 	err = m.db.WithContext(ctx).Raw(`SELECT id, payload_json, embedding <=> ? AS distance
-		FROM embeddings WHERE collection = ? ORDER BY embedding <=> ? LIMIT ?`, vec, collection, vec, topK).Scan(&rows).Error
+		FROM embeddings WHERE collection = ? ORDER BY distance LIMIT ?`, vec, collection, topK).Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	out := make([]SearchResult, 0, len(rows))
 	for _, r := range rows {
 		var payload []string
-		if r.PayloadJSON != "" {
-			if err := json.Unmarshal([]byte(r.PayloadJSON), &payload); err != nil {
+		if len(r.PayloadJSON) > 0 {
+			if err := json.Unmarshal(r.PayloadJSON, &payload); err != nil {
 				llog.Error("payload 反序列化失败", "err", err)
 			}
 		}
@@ -264,8 +241,24 @@ func (m *EmbeddingManagerImpl) SearchTopKByText(ctx context.Context, collection 
 }
 
 func (m *DBManagerImpl) DeleteEmbedding(ctx context.Context, collection string, batch int) {
-	if err := m.embedDB.db.WithContext(ctx).Exec(`DELETE FROM embeddings WHERE collection = ?`, collection).Error; err != nil {
-		llog.Error("清空向量库失败", err)
+	db := m.embedDB.db.WithContext(ctx)
+	if batch <= 0 {
+		if err := db.Exec(`DELETE FROM embeddings WHERE collection = ?`, collection).Error; err != nil {
+			llog.Error("清空向量库失败", err)
+		}
+		return
+	}
+	for {
+		res := db.Exec(`DELETE FROM embeddings WHERE ctid IN (
+			SELECT ctid FROM embeddings WHERE collection = ? LIMIT ?
+		)`, collection, batch)
+		if res.Error != nil {
+			llog.Error("清空向量库失败", res.Error)
+			return
+		}
+		if res.RowsAffected == 0 {
+			break
+		}
 	}
 }
 
@@ -293,7 +286,15 @@ func (m *DBManagerImpl) UpsertEmbeddingTexts(ctx context.Context, collection str
 
 func (m *DBManagerImpl) UpdateEmbedding(ctx context.Context, collection string, feishu *feishu.ReplyTable) {
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		datas := feishu.Wait()
+		if ctx.Err() != nil {
+			return
+		}
 		m.embedDB.UpdateKnowledge(ctx, datas, collection)
 	}
 }

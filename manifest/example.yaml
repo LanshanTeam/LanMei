@@ -1,0 +1,103 @@
+Database:
+  Postgres:
+    Host: "postgres"
+    Port: "5432"
+    User: ""
+    DBName: ""
+    Password: ""
+    SSLMode: "disable"
+    TimeZone: "Asia/Shanghai"
+
+BotAPI:
+  AppID: ""
+  AppSecret: ""
+
+OneBot:
+  HttpURL: "http://llonebot:3000"
+  accessToken: ""
+  ListenURL: ":3001"
+
+PublicIP: "lanmei:8080"
+
+feishu:
+  AppID: ""
+  AppSecret: ""
+  SpreadSheetToken: ""
+  SheetId: ""
+
+LLM:
+  Nodes:
+    Chat:
+      Type: "openai"
+      Model: "gemini-2.5-pro"
+      BaseURL: "https://api.mnapi.com/v1"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.8
+      PresencePenalty: 1.8
+      Thinking: "enabled"
+    Judge:
+      Type: "ark"
+      Model: "doubao-seed-1-8-251228"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.8
+      PresencePenalty: 1.8
+      Thinking: "disabled"
+    Planner:
+      Type: "ark"
+      Model: "doubao-seed-1-8-251228"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.2
+      Thinking: "disabled"
+    Analysis:
+      Type: "ark"
+      Model: "glm-4-7-251222"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.8
+      Thinking: "enabled"
+    Memory:
+      Type: "ark"
+      Model: "doubao-seed-1-8-251228"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.3
+      Thinking: "enabled"
+    SearchFormat:
+      Type: "ark"
+      Model: "glm-4-7-251222"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: ""
+      RetryTimes: 1
+      Temperature: 0.2
+      Thinking: "disabled"
+Ark:
+  Embed:
+    Model: "doubao-embedding-large-text-240915"
+    BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+    Region: "cn-beijing"
+    APIKey: ""
+    RetryTimes: 1
+
+Infini:
+  APIKey: ""
+  BaseURL: "https://cloud.infini-ai.com/maas/v1/rerank"
+  Model: "bge-reranker-v2-m3"
+
+Search:
+  BaseURL: "http://openserp:7000/mega/search"
+  TimeoutSeconds: 8
+  UserAgent: ""
+  Engines: "duckduckgo,bing,baidu"
