@@ -1,4 +1,4 @@
-package llmchat
+package memory
 
 import (
 	"LanMei/internal/bot/biz/dao"
@@ -209,7 +209,7 @@ func (m *MemoryManager) StoreEvent(ctx context.Context, groupID string, extracti
 		Text: text,
 	}
 	if err := dao.DBManager.UpsertEmbeddingTexts(ctx, chatMemoryCollection(groupID), []dao.EmbeddingItem{item}); err != nil {
-		llog.Error("写入群聊记忆失败: %v", err)
+		llog.Errorf("写入群聊记忆失败: %v", err)
 	}
 }
 

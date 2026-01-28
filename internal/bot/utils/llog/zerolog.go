@@ -74,3 +74,19 @@ func Debug(msg string, v ...interface{}) {
 func Fatal(msg string, v ...interface{}) {
 	logger.Fatal().Msg(msg + fmt.Sprint(v...))
 }
+
+func Infof(format string, v ...interface{}) {
+	logger.Info().Msgf(format, v...)
+}
+
+func Errorf(format string, v ...interface{}) {
+	logger.Error().Msgf(format, v...)
+}
+
+func Debugf(format string, v ...interface{}) {
+	logger.Debug().Msgf(format, v...)
+}
+
+func Fatalf(format string, v ...interface{}) {
+	logger.Fatal().Msgf(format, v...)
+}

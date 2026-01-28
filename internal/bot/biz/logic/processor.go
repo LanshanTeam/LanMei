@@ -9,8 +9,10 @@ import (
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/sensitive"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/bytedance/sonic"
 	zero "github.com/wdvxdr1123/ZeroBot"
 	"github.com/wdvxdr1123/ZeroBot/message"
 )
@@ -128,6 +130,23 @@ func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 		default:
 			command.StaticWords(input, groupID)
 
+			if ctx.Event.IsToMe {
+				input = "蓝妹，" + input
+			} else {
+				for _, seg := range ctx.Event.Message {
+					if seg.Type == "at" {
+						qqId, _ := strconv.Atoi(seg.Data["qq"])
+						json := ctx.GetStrangerInfo(int64(qqId), false)
+						res := make(map[string]interface{})
+						err := sonic.UnmarshalString(json.Raw, &res)
+						if err != nil {
+							llog.Info("反序列化错误", err)
+						}
+						input = res["nickname"].(string) + "，" + input
+					}
+				}
+			}
+			llog.Info("input:", input)
 			msg = p.chatEngine.ChatWithLanMei(
 				ctx.Event.Sender.NickName,
 				input,
