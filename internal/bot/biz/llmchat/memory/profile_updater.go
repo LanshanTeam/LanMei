@@ -31,8 +31,9 @@ func NewProfileUpdater(model fmodel.ToolCallingChatModel, hookRunner *hooks.Runn
 		schema.SystemMessage("任务：根据既有事实更新用户画像，保持简洁、稳定，避免臆测。"),
 		schema.SystemMessage("输出 summary 需包含以下小节：身份/关系/偏好/习惯/禁忌/常聊话题。"),
 		schema.SystemMessage("summary 行格式：`身份:...` `关系:...` 等，要求尽量详细，为之后对话做准备。只写事实，不推测。"),
+		schema.SystemMessage("summary 必须使用第三人称“他”描述，不要出现姓名/昵称/ID。"),
 		schema.SystemMessage("tags 输出 5-12 个关键词，来自事实内容，避免泛化词。"),
-		schema.UserMessage("用户:{subject}"),
+		schema.UserMessage("用户ID:{subject}"),
 		schema.UserMessage("已有画像:{current_profile}"),
 		schema.UserMessage("既有事实列表:\n{facts}"),
 	)

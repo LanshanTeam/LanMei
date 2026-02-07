@@ -38,7 +38,7 @@ func BuildInputAnalysisTemplate() *prompt.DefaultChatTemplate {
 		// ===== 指向对象判定（先于情绪）=====
 		schema.SystemMessage("必须优先判断 addressed_target：未点名你、未承接你上一句时，addressed_target 通常为 group 或 other；不要因为出现表情就判定为 me。"),
 
-		schema.SystemMessage("need_search 在以下场景必须为 true：游戏内容/动漫内容/动漫游戏角色相关；地点/位置/发生地/地点相关事件/名词解释；游戏/新版本/最新版本/更新内容；最近的社会事件/新闻；技术前沿/新发布包版本。search_queries 为检索关键词数组，尽量简短；若不需要搜索则填空数组。俚语/未知词若需要解释，也用 search_queries 表达。"),
+		schema.SystemMessage("need_search 在以下场景必须为 true：游戏名句、梗/游戏内容/动漫内容/动漫游戏角色相关；地点/位置/发生地/地点相关事件/名词解释；游戏/新版本/最新版本/更新内容；最近的社会事件/新闻；技术前沿/新发布包版本。search_queries 为检索关键词数组，尽量简短；若不需要搜索则填空数组。俚语/未知词若需要解释，也用 search_queries 表达。"),
 
 		schema.UserMessage("用户昵称：{nickname}"),
 		schema.UserMessage("用户画像：{user_profile}"),

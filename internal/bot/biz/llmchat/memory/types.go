@@ -27,10 +27,11 @@ type FactRecord struct {
 
 type UserKey struct {
 	GroupID string
-	Name    string
+	QQID    string
 }
 
 type knownUser struct {
 	key      UserKey
+	Nickname string
 	lastSeen time.Time
 }

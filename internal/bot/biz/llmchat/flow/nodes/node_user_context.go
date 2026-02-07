@@ -17,11 +17,11 @@ func UserContextNode(deps flowtypes.Dependencies) func(context.Context, *flowtyp
 			state.UserProfile = "无"
 			return state, nil
 		}
-		name := strings.TrimSpace(state.Request.Nickname)
-		if name == "" {
-			name = strings.TrimSpace(state.Request.UserID)
+		qqid := strings.TrimSpace(state.Request.UserID)
+		if qqid == "" {
+			qqid = strings.TrimSpace(state.Request.Nickname)
 		}
-		facts, profile := deps.Memory.GetUserContext(ctx, state.Request.GroupID, name, 12)
+		facts, profile := deps.Memory.GetUserContext(ctx, state.Request.GroupID, qqid, 12)
 		state.UserFacts = facts
 		state.UserProfile = profile
 		return state, nil

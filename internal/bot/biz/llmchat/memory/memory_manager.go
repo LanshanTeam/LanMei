@@ -108,6 +108,7 @@ type MemoryManager struct {
 	worker         *MemoryWorker
 	knownUsersMu   sync.Mutex
 	knownUsers     map[string]knownUser
+	userAliases    map[string]string
 }
 
 func NewMemoryManager(reranker *rerank.Reranker, extractor *FactExtractor, updater *FactUpdater, profileUpdater *ProfileUpdater, windowSize int) *MemoryManager {
@@ -118,6 +119,7 @@ func NewMemoryManager(reranker *rerank.Reranker, extractor *FactExtractor, updat
 		profileUpdater: profileUpdater,
 		shortTerm:      NewShortTermMemory(windowSize),
 		knownUsers:     make(map[string]knownUser),
+		userAliases:    make(map[string]string),
 	}
 }
 
@@ -136,7 +138,7 @@ func (m *MemoryManager) LoadHistoryAndAppendUser(groupID, userID, nickname, inpu
 	if strings.TrimSpace(input) == "" {
 		return history
 	}
-	m.registerUser(groupID, nickname)
+	m.registerUser(groupID, userID, nickname)
 	evicted := m.shortTerm.Append(groupID, MemoryMessage{
 		GroupID:  groupID,
 		UserID:   userID,
@@ -226,20 +228,27 @@ func (m *MemoryManager) ApplyFacts(ctx context.Context, groupID string, facts []
 		if subject == "" || content == "" {
 			continue
 		}
-		eventFacts[subject] = append(eventFacts[subject], formatUserFact(subject, content))
-		m.registerUser(groupID, subject)
+		canonical := m.resolveSubject(groupID, subject)
+		if canonical == "" {
+			continue
+		}
+		eventFacts[canonical] = append(eventFacts[canonical], formatUserFact(canonical, content))
 		// 搜索长期记忆中与该事实相关的旧事实，判断是新增、更新还是删除
-		oldFacts := m.searchSimilarFacts(ctx, groupID, subject, content, defaultFactTopK)
+		oldFacts := m.searchSimilarFacts(ctx, groupID, canonical, content, defaultFactTopK)
 		if m.updater == nil || len(oldFacts) == 0 {
-			m.addFact(ctx, groupID, subject, content)
-			changedSubjects[subject] = struct{}{}
+			m.addFact(ctx, groupID, canonical, content)
+			if m.isKnownUser(groupID, canonical) {
+				changedSubjects[canonical] = struct{}{}
+			}
 			continue
 		}
 		// 通过 LLM 决定更新策略
-		decision := m.updater.Decide(ctx, subject, content, oldFacts)
+		decision := m.updater.Decide(ctx, canonical, content, oldFacts)
 		// 根据决策结果应用到长期记忆中，并记录有哪些主体的事实发生了变化
-		if m.applyDecision(ctx, groupID, subject, content, decision, oldFacts) {
-			changedSubjects[subject] = struct{}{}
+		if m.applyDecision(ctx, groupID, canonical, content, decision, oldFacts) {
+			if m.isKnownUser(groupID, canonical) {
+				changedSubjects[canonical] = struct{}{}
+			}
 		}
 	}
 	// 这里是需要根据刚更新的事实来更新用户画像。
@@ -264,33 +273,33 @@ func (m *MemoryManager) Retrieve(ctx context.Context, query, groupID string, nee
 	return reranked
 }
 
-func (m *MemoryManager) GetUserContext(ctx context.Context, groupID, name string, limit int) ([]string, string) {
-	facts := m.GetUserFacts(ctx, groupID, name, limit)
-	profile := m.GetUserProfile(ctx, groupID, name)
+func (m *MemoryManager) GetUserContext(ctx context.Context, groupID, qqid string, limit int) ([]string, string) {
+	facts := m.GetUserFacts(ctx, groupID, qqid, limit)
+	profile := m.GetUserProfile(ctx, groupID, qqid)
 	return facts, profile
 }
 
-func (m *MemoryManager) GetUserFacts(ctx context.Context, groupID, name string, limit int) []string {
-	name = strings.TrimSpace(name)
-	if name == "" || dao.DBManager == nil {
+func (m *MemoryManager) GetUserFacts(ctx context.Context, groupID, qqid string, limit int) []string {
+	qqid = strings.TrimSpace(qqid)
+	if qqid == "" || dao.DBManager == nil {
 		return nil
 	}
 	if limit <= 0 {
 		limit = defaultUserFactTopK
 	}
-	query := "用户:" + name
+	query := "用户:" + qqid
 	results := dao.DBManager.SearchTopKResults(ctx, factCollection(groupID), query, uint64(limit))
 	facts := make([]string, 0, len(results))
 	for _, res := range results {
 		text := extractFactText(res.Text)
 		subject := extractFactSubject(res.Text)
-		if subject != "" && subject != name {
+		if subject != "" && subject != qqid {
 			continue
 		}
-		if subject == "" && !strings.Contains(res.Text, name) {
+		if subject == "" && !strings.Contains(res.Text, qqid) {
 			continue
 		}
-		formatted := formatUserFact(name, text)
+		formatted := formatUserFact(qqid, text)
 		if formatted == "" {
 			continue
 		}
@@ -298,7 +307,7 @@ func (m *MemoryManager) GetUserFacts(ctx context.Context, groupID, name string, 
 	}
 	facts = dedupeStrings(facts)
 	if m != nil && m.reranker != nil && len(facts) > 1 {
-		reranked := m.reranker.TopN(8, facts, name)
+		reranked := m.reranker.TopN(8, facts, qqid)
 		if len(reranked) > 0 {
 			facts = reranked
 		}
@@ -306,12 +315,12 @@ func (m *MemoryManager) GetUserFacts(ctx context.Context, groupID, name string, 
 	return facts
 }
 
-func (m *MemoryManager) GetUserProfile(ctx context.Context, groupID, name string) string {
-	name = strings.TrimSpace(name)
-	if name == "" || dao.DBManager == nil {
+func (m *MemoryManager) GetUserProfile(ctx context.Context, groupID, qqid string) string {
+	qqid = strings.TrimSpace(qqid)
+	if qqid == "" || dao.DBManager == nil {
 		return "无"
 	}
-	profile, err := dao.DBManager.GetUserProfile(ctx, groupID, name)
+	profile, err := dao.DBManager.GetUserProfile(ctx, groupID, qqid)
 	if err != nil || profile == nil {
 		return "无"
 	}
@@ -328,10 +337,10 @@ func (m *MemoryManager) UpdateProfiles(ctx context.Context) {
 	users := m.listKnownUsers()
 	subjects := make(map[string]struct{}, len(users))
 	for _, user := range users {
-		if user.Name == "" {
+		if user.QQID == "" {
 			continue
 		}
-		subjects[user.Name] = struct{}{}
+		subjects[user.QQID] = struct{}{}
 	}
 	m.updateProfilesForSubjects(ctx, "", subjects, nil)
 }
@@ -346,42 +355,44 @@ func (m *MemoryManager) updateProfilesForSubjects(ctx context.Context, groupID s
 	}
 }
 
-func (m *MemoryManager) updateProfileForSubject(ctx context.Context, groupID, subject string, extraFacts []string) {
-	subject = strings.TrimSpace(subject)
-	if subject == "" {
+func (m *MemoryManager) updateProfileForSubject(ctx context.Context, groupID, qqid string, extraFacts []string) {
+	qqid = strings.TrimSpace(qqid)
+	if qqid == "" {
 		return
 	}
 	if groupID == "" {
 		for _, user := range m.listKnownUsers() {
-			if user.Name != subject {
+			if user.QQID != qqid {
 				continue
 			}
-			m.updateProfileForSubject(ctx, user.GroupID, subject, extraFacts)
+			m.updateProfileForSubject(ctx, user.GroupID, qqid, extraFacts)
 		}
 		return
 	}
 	// 获取和用户相关的事实
-	facts := m.GetUserFacts(ctx, groupID, subject, defaultUserFactTopK)
+	facts := m.GetUserFacts(ctx, groupID, qqid, defaultUserFactTopK)
 	facts = mergeEventFacts(extraFacts, facts)
 	if len(facts) == 0 {
 		return
 	}
 	current := ProfileResult{}
-	existing, err := dao.DBManager.GetUserProfile(ctx, groupID, subject)
+	existing, err := dao.DBManager.GetUserProfile(ctx, groupID, qqid)
 	if err == nil && existing != nil {
 		current.Summary = existing.Summary
 		current.Tags = splitTags(existing.Tags)
 	}
 	// 这里也是基于 LLM 进行更新
-	updated := m.profileUpdater.Update(ctx, subject, facts, current)
+	updated := m.profileUpdater.Update(ctx, qqid, facts, current)
 	if strings.TrimSpace(updated.Summary) == "" {
 		return
 	}
+	nickname := m.lookupNickname(groupID, qqid)
 	profile := &model.UserProfile{
-		GroupID: groupID,
-		Name:    subject,
-		Summary: updated.Summary,
-		Tags:    strings.Join(updated.Tags, ","),
+		GroupID:  groupID,
+		QQID:     qqid,
+		Nickname: nickname,
+		Summary:  updated.Summary,
+		Tags:     strings.Join(updated.Tags, ","),
 	}
 	if err := dao.DBManager.UpsertUserProfile(ctx, profile); err != nil {
 		llog.Errorf("更新用户画像失败: %v", err)
@@ -487,14 +498,20 @@ func (m *MemoryManager) upsertFact(ctx context.Context, groupID string, id uint6
 	}
 }
 
-func (m *MemoryManager) registerUser(groupID, name string) {
-	name = strings.TrimSpace(name)
-	if name == "" {
+func (m *MemoryManager) registerUser(groupID, qqid, nickname string) {
+	groupID = strings.TrimSpace(groupID)
+	qqid = strings.TrimSpace(qqid)
+	nickname = strings.TrimSpace(nickname)
+	if groupID == "" || qqid == "" {
 		return
 	}
-	key := groupID + "|" + name
+	key := groupID + "|" + qqid
 	m.knownUsersMu.Lock()
-	m.knownUsers[key] = knownUser{key: UserKey{GroupID: groupID, Name: name}, lastSeen: time.Now()}
+	m.knownUsers[key] = knownUser{key: UserKey{GroupID: groupID, QQID: qqid}, Nickname: nickname, lastSeen: time.Now()}
+	if nickname != "" {
+		aliasKey := groupID + "|" + nickname
+		m.userAliases[aliasKey] = qqid
+	}
 	m.knownUsersMu.Unlock()
 }
 
@@ -506,6 +523,52 @@ func (m *MemoryManager) listKnownUsers() []UserKey {
 		out = append(out, user.key)
 	}
 	return out
+}
+
+func (m *MemoryManager) lookupNickname(groupID, qqid string) string {
+	if m == nil {
+		return ""
+	}
+	key := strings.TrimSpace(groupID) + "|" + strings.TrimSpace(qqid)
+	m.knownUsersMu.Lock()
+	user, ok := m.knownUsers[key]
+	m.knownUsersMu.Unlock()
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(user.Nickname)
+}
+
+func (m *MemoryManager) resolveSubject(groupID, subject string) string {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return ""
+	}
+	key := strings.TrimSpace(groupID) + "|" + subject
+	m.knownUsersMu.Lock()
+	if _, ok := m.knownUsers[key]; ok {
+		m.knownUsersMu.Unlock()
+		return subject
+	}
+	qqid, ok := m.userAliases[key]
+	m.knownUsersMu.Unlock()
+	if ok && strings.TrimSpace(qqid) != "" {
+		return qqid
+	}
+	return subject
+}
+
+func (m *MemoryManager) isKnownUser(groupID, qqid string) bool {
+	groupID = strings.TrimSpace(groupID)
+	qqid = strings.TrimSpace(qqid)
+	if groupID == "" || qqid == "" {
+		return false
+	}
+	key := groupID + "|" + qqid
+	m.knownUsersMu.Lock()
+	_, ok := m.knownUsers[key]
+	m.knownUsersMu.Unlock()
+	return ok
 }
 
 func factCollection(groupID string) string {
@@ -588,7 +651,24 @@ func formatUserFact(subject, content string) string {
 	if subject == "" {
 		return content
 	}
-	return subject + "：" + content
+	display := subject
+	if isLikelyQQID(subject) {
+		display = "他"
+	}
+	return display + "：" + content
+}
+
+func isLikelyQQID(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseDecisionID(raw any) uint64 {
