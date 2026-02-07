@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"LanMei/internal/bot/biz/llmchat/hooks"
+	"LanMei/internal/bot/biz/llmchat/flow/hooks"
 	"LanMei/internal/bot/utils/llog"
 
 	fmodel "github.com/cloudwego/eino/components/model"

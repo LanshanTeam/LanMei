@@ -1,10 +1,11 @@
-package flow
+package nodes
 
 import (
 	"encoding/json"
 	"fmt"
 	"strings"
 
+	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
 	"LanMei/internal/bot/utils/websearch"
 
 	"github.com/cloudwego/eino/schema"
@@ -16,7 +17,7 @@ const (
 	replyPenaltyMax         = 30.0
 )
 
-func formatPlan(plan Plan) string {
+func formatPlan(plan flowtypes.Plan) string {
 	return fmt.Sprintf("action=%s; intent=%s; style=%s; need_memory=%t; need_knowledge=%t; need_clarify=%t",
 		plan.Action, plan.Intent, plan.ReplyStyle, plan.NeedMemory, plan.NeedKnowledge, plan.NeedClarify)
 }

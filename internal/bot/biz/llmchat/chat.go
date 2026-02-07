@@ -1,10 +1,15 @@
 package llmchat
 
 import (
+	"context"
+	"time"
+
 	"LanMei/internal/bot/biz/dao"
-	"LanMei/internal/bot/biz/llmchat/analysis"
 	"LanMei/internal/bot/biz/llmchat/flow"
-	"LanMei/internal/bot/biz/llmchat/hooks"
+	"LanMei/internal/bot/biz/llmchat/flow/hooks"
+	flownodes "LanMei/internal/bot/biz/llmchat/flow/nodes"
+	llmtemplate "LanMei/internal/bot/biz/llmchat/flow/template"
+	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
 	"LanMei/internal/bot/biz/llmchat/memory"
 	llmmodel "LanMei/internal/bot/biz/llmchat/model"
 	"LanMei/internal/bot/config"
@@ -12,8 +17,6 @@ import (
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/rerank"
 	"LanMei/internal/bot/utils/websearch"
-	"context"
-	"time"
 )
 
 const (
@@ -41,17 +44,17 @@ func NewChatEngine() *ChatEngine {
 		llog.Fatal("初始化大模型", err)
 		return nil
 	}
-	plannerModel, err := llmmodel.NewToolCallingChatModel(plannerConfig, buildPlanTool())
+	plannerModel, err := llmmodel.NewToolCallingChatModel(plannerConfig, llmtemplate.BuildPlanTool())
 	if err != nil {
 		llog.Fatal("初始化 planner 工具失败", err)
 		return nil
 	}
-	judgeModel, err := llmmodel.NewToolCallingChatModel(judgeConfig, buildJudgeTool())
+	judgeModel, err := llmmodel.NewToolCallingChatModel(judgeConfig, llmtemplate.BuildJudgeTool())
 	if err != nil {
 		llog.Fatal("初始化 judge 模型", err)
 		return nil
 	}
-	analysisModel, err := llmmodel.NewToolCallingChatModel(analysisConfig, analysis.BuildTool())
+	analysisModel, err := llmmodel.NewToolCallingChatModel(analysisConfig, flownodes.BuildTool())
 	if err != nil {
 		llog.Fatal("初始化 input 分析工具失败", err)
 		return nil
@@ -77,10 +80,10 @@ func NewChatEngine() *ChatEngine {
 		return nil
 	}
 
-	searchTemplate := buildSearchFormatTemplate()
-	template := buildChatTemplate()
-	planTemplate := buildPlanTemplate()
-	judgeTemplate := buildJudgeTemplate()
+	searchTemplate := llmtemplate.BuildSearchFormatTemplate()
+	template := llmtemplate.BuildChatTemplate()
+	planTemplate := llmtemplate.BuildPlanTemplate()
+	judgeTemplate := llmtemplate.BuildJudgeTemplate()
 	hookRunner := hooks.NewRunner(hooks.NewDurationLogger())
 	chatHookInfo := hooks.CallInfo{Node: "chat", Model: chatConfig.Model}
 	judgeHookInfo := hooks.CallInfo{Node: "judge", Model: judgeConfig.Model}
@@ -106,11 +109,11 @@ func NewChatEngine() *ChatEngine {
 	memoryWorker := memory.NewMemoryWorker(memoryManager, 12*time.Second, 4, 12)
 	memoryWorker.Start()
 	memoryManager.BindWorker(memoryWorker)
-	inputAnalyzer := analysis.NewInputAnalyzer(analysisModel, hookRunner, analysisHookInfo)
+	inputAnalyzer := flownodes.NewInputAnalyzer(analysisModel, hookRunner, analysisHookInfo)
 	searcher := websearch.NewClient()
 	frequencyManager := NewFrequencyControlManager()
 
-	chatFlow, err := flow.NewChatFlow(flow.Dependencies{
+	chatFlow, err := flow.NewChatFlow(flowtypes.Dependencies{
 		ChatModel:      chatModel,
 		JudgeModel:     judgeModel,
 		PlannerModel:   plannerModel,
@@ -125,7 +128,7 @@ func NewChatEngine() *ChatEngine {
 		Searcher:       searcher,
 		Frequency:      frequencyManager,
 		Hooks:          hookRunner,
-		HookInfos: flow.HookInfos{
+		HookInfos: flowtypes.HookInfos{
 			Chat:   chatHookInfo,
 			Judge:  judgeHookInfo,
 			Plan:   planHookInfo,
@@ -151,7 +154,7 @@ func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, gr
 		return ""
 	}
 	ctx := context.Background()
-	reply, err := c.flow.Run(ctx, flow.Request{
+	reply, err := c.flow.Run(ctx, flowtypes.Request{
 		Nickname: nickname,
 		Input:    input,
 		UserID:   ID,

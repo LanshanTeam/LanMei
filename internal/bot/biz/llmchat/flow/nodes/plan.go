@@ -1,19 +1,20 @@
-package flow
+package nodes
 
 import (
 	"context"
 	"encoding/json"
 	"strings"
 
-	"LanMei/internal/bot/biz/llmchat/hooks"
+	"LanMei/internal/bot/biz/llmchat/flow/hooks"
+	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
 	"LanMei/internal/bot/utils/llog"
 
 	"github.com/cloudwego/eino/schema"
 )
 
-func buildPlan(ctx context.Context, deps Dependencies, state *State) Plan {
+func buildPlan(ctx context.Context, deps flowtypes.Dependencies, state *flowtypes.State) flowtypes.Plan {
 	if state == nil || deps.PlanTemplate == nil || deps.PlannerModel == nil {
-		return Plan{}
+		return flowtypes.Plan{}
 	}
 	message := strings.TrimSpace(state.Analysis.OptimizedInput)
 	if message == "" {
@@ -32,20 +33,20 @@ func buildPlan(ctx context.Context, deps Dependencies, state *State) Plan {
 	})
 	if err != nil {
 		llog.Error("format plan message error: %v", err)
-		return Plan{}
+		return flowtypes.Plan{}
 	}
 	msg, err := hooks.Run(ctx, deps.Hooks, deps.HookInfos.Plan, func() (*schema.Message, error) {
 		return deps.PlannerModel.Generate(ctx, in)
 	})
 	if err != nil {
 		llog.Error("generate plan error: %v", err)
-		return Plan{}
+		return flowtypes.Plan{}
 	}
 	for _, tc := range msg.ToolCalls {
 		if tc.Function.Name != "plan_chat" {
 			continue
 		}
-		var plan Plan
+		var plan flowtypes.Plan
 		if err := json.Unmarshal([]byte(tc.Function.Arguments), &plan); err != nil {
 			llog.Error("解析 planner tool 参数失败: %v", err)
 			break
@@ -56,5 +57,5 @@ func buildPlan(ctx context.Context, deps Dependencies, state *State) Plan {
 		plan.ReplyStyle = strings.TrimSpace(plan.ReplyStyle)
 		return plan
 	}
-	return Plan{}
+	return flowtypes.Plan{}
 }

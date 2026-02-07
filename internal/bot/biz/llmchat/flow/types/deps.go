@@ -1,19 +1,25 @@
-package flow
+package types
 
 import (
-	"LanMei/internal/bot/biz/llmchat/analysis"
-	"LanMei/internal/bot/biz/llmchat/hooks"
+	"context"
+
+	"LanMei/internal/bot/biz/llmchat/flow/hooks"
 	"LanMei/internal/bot/biz/llmchat/memory"
 	"LanMei/internal/bot/utils/rerank"
 	"LanMei/internal/bot/utils/websearch"
 
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
+	"github.com/cloudwego/eino/schema"
 )
 
 type FrequencyController interface {
 	ShouldThrottle(groupID string) bool
 	MarkSent(groupID string)
+}
+
+type InputAnalyzer interface {
+	Analyze(ctx context.Context, nickname, input string, history []schema.Message, knownFacts []string, userProfile string) (InputAnalysis, bool)
 }
 
 type HookInfos struct {
@@ -32,7 +38,7 @@ type Dependencies struct {
 	JudgeTemplate  *prompt.DefaultChatTemplate
 	PlanTemplate   *prompt.DefaultChatTemplate
 	SearchTemplate *prompt.DefaultChatTemplate
-	InputAnalyzer  *analysis.InputAnalyzer
+	InputAnalyzer  InputAnalyzer
 	Memory         *memory.MemoryManager
 	Reranker       *rerank.Reranker
 	Searcher       *websearch.Client

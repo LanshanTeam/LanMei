@@ -3,43 +3,46 @@ package flow
 import (
 	"context"
 
+	"LanMei/internal/bot/biz/llmchat/flow/nodes"
+	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
+
 	"github.com/cloudwego/eino/compose"
 )
 
 type ChatFlow struct {
-	runner compose.Runnable[*State, *State]
+	runner compose.Runnable[*flowtypes.State, *flowtypes.State]
 }
 
-func NewChatFlow(deps Dependencies) (*ChatFlow, error) {
-	g := compose.NewGraph[*State, *State]()
-	if err := g.AddLambdaNode("init", compose.InvokableLambda(initNode(deps))); err != nil {
+func NewChatFlow(deps flowtypes.Dependencies) (*ChatFlow, error) {
+	g := compose.NewGraph[*flowtypes.State, *flowtypes.State]()
+	if err := g.AddLambdaNode("init", compose.InvokableLambda(nodes.InitNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("user_context", compose.InvokableLambda(userContextNode(deps))); err != nil {
+	if err := g.AddLambdaNode("user_context", compose.InvokableLambda(nodes.UserContextNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("analysis", compose.InvokableLambda(analysisNode(deps))); err != nil {
+	if err := g.AddLambdaNode("analysis", compose.InvokableLambda(nodes.AnalysisNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("judge", compose.InvokableLambda(judgeNode(deps))); err != nil {
+	if err := g.AddLambdaNode("judge", compose.InvokableLambda(nodes.JudgeNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("plan", compose.InvokableLambda(planNode(deps))); err != nil {
+	if err := g.AddLambdaNode("plan", compose.InvokableLambda(nodes.PlanNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("gather_context", compose.InvokableLambda(gatherContextNode(deps))); err != nil {
+	if err := g.AddLambdaNode("gather_context", compose.InvokableLambda(nodes.GatherContextNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("search_format", compose.InvokableLambda(searchFormatNode(deps))); err != nil {
+	if err := g.AddLambdaNode("search_format", compose.InvokableLambda(nodes.SearchFormatNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("build_prompt", compose.InvokableLambda(buildPromptNode(deps))); err != nil {
+	if err := g.AddLambdaNode("build_prompt", compose.InvokableLambda(nodes.BuildPromptNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("chat", compose.InvokableLambda(chatNode(deps))); err != nil {
+	if err := g.AddLambdaNode("chat", compose.InvokableLambda(nodes.ChatNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("post_process", compose.InvokableLambda(postProcessNode(deps))); err != nil {
+	if err := g.AddLambdaNode("post_process", compose.InvokableLambda(nodes.PostProcessNode(deps))); err != nil {
 		return nil, err
 	}
 
@@ -84,11 +87,11 @@ func NewChatFlow(deps Dependencies) (*ChatFlow, error) {
 	return &ChatFlow{runner: runner}, nil
 }
 
-func (f *ChatFlow) Run(ctx context.Context, req Request) (string, error) {
+func (f *ChatFlow) Run(ctx context.Context, req flowtypes.Request) (string, error) {
 	if f == nil || f.runner == nil {
 		return "", nil
 	}
-	state := NewState(req)
+	state := flowtypes.NewState(req)
 	out, err := f.runner.Invoke(ctx, state)
 	if err != nil {
 		return "", err

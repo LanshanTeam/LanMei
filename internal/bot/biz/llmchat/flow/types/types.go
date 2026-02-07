@@ -1,10 +1,6 @@
-package flow
+package types
 
-import (
-	"LanMei/internal/bot/biz/llmchat/analysis"
-
-	"github.com/cloudwego/eino/schema"
-)
+import "github.com/cloudwego/eino/schema"
 
 type Request struct {
 	Nickname string
@@ -12,6 +8,19 @@ type Request struct {
 	UserID   string
 	GroupID  string
 	Must     bool
+}
+
+type InputAnalysis struct {
+	RawInput        string   `json:"-"`
+	OptimizedInput  string   `json:"optimized_input"`
+	Intent          string   `json:"intent"`
+	Purpose         string   `json:"purpose"`
+	PsychState      string   `json:"psych_state"`
+	AddressedTarget string   `json:"addressed_target"`
+	TargetDetail    string   `json:"target_detail"`
+	NeedClarify     bool     `json:"need_clarify"`
+	NeedSearch      bool     `json:"need_search"`
+	SearchQueries   []string `json:"search_queries"`
 }
 
 type Plan struct {
@@ -29,7 +38,7 @@ type State struct {
 	History      []schema.Message
 	UserFacts    []string
 	UserProfile  string
-	Analysis     analysis.InputAnalysis
+	Analysis     InputAnalysis
 	Plan         Plan
 	MemoryBlock  string
 	Knowledge    []string
