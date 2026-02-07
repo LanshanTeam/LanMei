@@ -68,20 +68,24 @@ func NewInputAnalyzer(model fmodel.ToolCallingChatModel, hookRunner *hooks.Runne
 		schema.SystemMessage("need_search 在以下场景为 true：地点/位置/发生地/地点相关事件/名词解释；新发布游戏/新版本/最新版本/更新内容；最近的社会事件/新闻；技术前沿/新发布包版本。search_queries 为检索关键词数组，尽量简短；若不需要搜索则填空数组。俚语/未知词若需要解释，也用 search_queries 表达。"),
 
 		schema.UserMessage("用户昵称：{nickname}"),
+		schema.UserMessage("用户画像：{user_profile}"),
+		schema.UserMessage("既有事实：{known_facts}"),
 		schema.UserMessage("最近消息：{history}"),
 		schema.UserMessage("当前消息：{message}"),
 	)
 	return &InputAnalyzer{model: model, template: template, hooks: hookRunner, hookInfo: hookInfo}
 }
 
-func (a *InputAnalyzer) Analyze(ctx context.Context, nickname, input string, history []schema.Message) (InputAnalysis, bool) {
+func (a *InputAnalyzer) Analyze(ctx context.Context, nickname, input string, history []schema.Message, knownFacts []string, userProfile string) (InputAnalysis, bool) {
 	if a == nil || a.model == nil || a.template == nil {
 		return InputAnalysis{}, false
 	}
 	in, err := a.template.Format(ctx, map[string]any{
-		"nickname": nickname,
-		"history":  history,
-		"message":  input,
+		"nickname":     nickname,
+		"user_profile": normalizeUserProfile(userProfile),
+		"known_facts":  normalizeKnownFacts(knownFacts),
+		"history":      history,
+		"message":      input,
 	})
 	if err != nil {
 		llog.Error("format input analysis error: %v", err)
@@ -211,4 +215,30 @@ func dedupeStrings(items []string) []string {
 		out = append(out, item)
 	}
 	return out
+}
+
+func normalizeUserProfile(profile string) string {
+	profile = strings.TrimSpace(profile)
+	if profile == "" {
+		return "无"
+	}
+	return profile
+}
+
+func normalizeKnownFacts(facts []string) string {
+	if len(facts) == 0 {
+		return "无"
+	}
+	trimmed := make([]string, 0, len(facts))
+	for _, fact := range facts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" {
+			continue
+		}
+		trimmed = append(trimmed, fact)
+	}
+	if len(trimmed) == 0 {
+		return "无"
+	}
+	return strings.Join(trimmed, "\n")
 }

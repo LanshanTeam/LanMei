@@ -156,12 +156,14 @@ func (w *MemoryWorker) processGroup(ctx context.Context, groupID string, message
 			batchSize = w.maxMessages
 		}
 		batch := messages[:batchSize]
-		extraction := w.manager.ExtractEvent(ctx, groupID, batch, force)
+		// 从当前短暂的上下文窗口提取事实
+		extraction := w.manager.ExtractFacts(ctx, groupID, batch, force)
 		if !extraction.Sufficient && !force {
 			return messages, true
 		}
+		// 如果抽取到的事实足够且有更新，则应用到长期记忆中
 		if extraction.Sufficient || force {
-			w.manager.StoreEvent(ctx, groupID, extraction)
+			w.manager.ApplyFacts(ctx, groupID, extraction.Facts, force)
 		}
 		messages = messages[batchSize:]
 	}

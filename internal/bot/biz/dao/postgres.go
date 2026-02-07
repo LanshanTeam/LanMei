@@ -58,7 +58,7 @@ func InitDBManager() {
 		cacheDB: NewCacheManager(db),
 		embedDB: NewEmbeddingManager(db),
 	}
-	db.AutoMigrate(&model.User{}, &CacheKV{}, &CacheHash{}, &EmbeddingRecord{})
+	db.AutoMigrate(&model.User{}, &model.UserProfile{}, &CacheKV{}, &CacheHash{}, &EmbeddingRecord{})
 }
 
 func NewPostgresManager(db *gorm.DB) *PostgresManagerImpl {

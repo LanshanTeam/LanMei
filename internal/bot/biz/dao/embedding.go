@@ -93,9 +93,10 @@ type PointF64 struct {
 }
 
 type SearchResult struct {
-	ID      any
+	ID      uint64
 	Score   float32
 	Payload map[string][]string
+	Text    string
 }
 
 type EmbeddingItem struct {
@@ -216,11 +217,16 @@ func (m *EmbeddingManagerImpl) SearchTopKF64(ctx context.Context, collection str
 				llog.Error("payload 反序列化失败", "err", err)
 			}
 		}
+		text := ""
+		if len(payload) > 0 {
+			text = payload[0]
+		}
 		score := float32(1.0 - r.Distance)
 		out = append(out, SearchResult{
 			ID:      r.ID,
 			Score:   score,
 			Payload: map[string][]string{"text": payload},
+			Text:    text,
 		})
 	}
 	return out, nil
@@ -278,6 +284,29 @@ func (m *DBManagerImpl) GetTopK(ctx context.Context, collection string, K uint64
 		}
 	}
 	return out
+}
+
+func (m *DBManagerImpl) SearchTopKResults(ctx context.Context, collection string, text string, K uint64) []SearchResult {
+	if m == nil || m.embedDB == nil {
+		return nil
+	}
+	res, err := m.embedDB.SearchTopKByText(ctx, collection, text, K)
+	if err != nil {
+		llog.Error("查找向量库失败", err)
+		return nil
+	}
+	return res
+}
+
+func (m *DBManagerImpl) DeleteEmbeddingByID(ctx context.Context, collection string, id uint64) error {
+	if m == nil || m.embedDB == nil {
+		return nil
+	}
+	if id == 0 {
+		return nil
+	}
+	db := m.embedDB.db.WithContext(ctx)
+	return db.Exec(`DELETE FROM embeddings WHERE collection = ? AND id = ?`, collection, id).Error
 }
 
 func (m *DBManagerImpl) UpsertEmbeddingTexts(ctx context.Context, collection string, items []EmbeddingItem) error {

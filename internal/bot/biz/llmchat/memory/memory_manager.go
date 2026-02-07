@@ -2,10 +2,12 @@ package memory
 
 import (
 	"LanMei/internal/bot/biz/dao"
+	"LanMei/internal/bot/biz/model"
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/rerank"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,8 +16,11 @@ import (
 )
 
 const (
-	chatMemoryPrefix         = "LanMei-ChatMemory"
+	factMemoryPrefix         = "LanMei-UserFacts"
 	defaultShortMemoryWindow = 20
+	minFactConfidence        = 0.45
+	defaultFactTopK          = 6
+	defaultUserFactTopK      = 12
 )
 
 type MemoryMessage struct {
@@ -95,17 +100,24 @@ func (s *ShortTermMemory) DrainAll() map[string][]MemoryMessage {
 }
 
 type MemoryManager struct {
-	reranker  *rerank.Reranker
-	extractor *MemoryExtractor
-	shortTerm *ShortTermMemory
-	worker    *MemoryWorker
+	reranker       *rerank.Reranker
+	extractor      *FactExtractor
+	updater        *FactUpdater
+	profileUpdater *ProfileUpdater
+	shortTerm      *ShortTermMemory
+	worker         *MemoryWorker
+	knownUsersMu   sync.Mutex
+	knownUsers     map[string]knownUser
 }
 
-func NewMemoryManager(reranker *rerank.Reranker, extractor *MemoryExtractor, windowSize int) *MemoryManager {
+func NewMemoryManager(reranker *rerank.Reranker, extractor *FactExtractor, updater *FactUpdater, profileUpdater *ProfileUpdater, windowSize int) *MemoryManager {
 	return &MemoryManager{
-		reranker:  reranker,
-		extractor: extractor,
-		shortTerm: NewShortTermMemory(windowSize),
+		reranker:       reranker,
+		extractor:      extractor,
+		updater:        updater,
+		profileUpdater: profileUpdater,
+		shortTerm:      NewShortTermMemory(windowSize),
+		knownUsers:     make(map[string]knownUser),
 	}
 }
 
@@ -124,6 +136,7 @@ func (m *MemoryManager) LoadHistoryAndAppendUser(groupID, userID, nickname, inpu
 	if strings.TrimSpace(input) == "" {
 		return history
 	}
+	m.registerUser(groupID, nickname)
 	evicted := m.shortTerm.Append(groupID, MemoryMessage{
 		GroupID:  groupID,
 		UserID:   userID,
@@ -176,40 +189,62 @@ func (m *MemoryManager) enqueueEvicted(groupID string, messages []MemoryMessage,
 	m.worker.Enqueue(groupID, messages)
 }
 
-func (m *MemoryManager) ExtractEvent(ctx context.Context, groupID string, messages []MemoryMessage, force bool) MemoryExtraction {
+func (m *MemoryManager) ExtractFacts(ctx context.Context, groupID string, messages []MemoryMessage, force bool) FactExtraction {
 	if len(messages) == 0 {
-		return MemoryExtraction{}
+		return FactExtraction{}
 	}
-	if m != nil && m.extractor != nil {
-		extraction := m.extractor.ExtractBatch(ctx, groupID, messages, force)
-		if extraction.Sufficient {
-			return extraction
-		}
-		if !force {
-			return extraction
-		}
-		if hasExtractionContent(extraction) {
-			extraction.Sufficient = true
-			return extraction
-		}
+	if m == nil || m.extractor == nil {
+		return FactExtraction{}
 	}
-	return fallbackExtraction(messages)
+	extraction := m.extractor.ExtractBatch(ctx, groupID, messages, force)
+	if extraction.Sufficient {
+		return extraction
+	}
+	if !force {
+		return extraction
+	}
+	if len(extraction.Facts) > 0 {
+		extraction.Sufficient = true
+		return extraction
+	}
+	return FactExtraction{}
 }
 
-func (m *MemoryManager) StoreEvent(ctx context.Context, groupID string, extraction MemoryExtraction) {
-	if dao.DBManager == nil {
+func (m *MemoryManager) ApplyFacts(ctx context.Context, groupID string, facts []Fact, force bool) {
+	if m == nil || len(facts) == 0 || dao.DBManager == nil {
 		return
 	}
-	text := formatMemoryEventText(extraction)
-	if text == "" {
-		return
+	changedSubjects := make(map[string]struct{})
+	eventFacts := make(map[string][]string)
+	// 遍历提取的事实，过滤掉置信度较低的，并准备更新长期记忆
+	for _, fact := range facts {
+		if !force && fact.Confidence > 0 && fact.Confidence < minFactConfidence {
+			continue
+		}
+		subject := strings.TrimSpace(fact.Subject)
+		content := strings.TrimSpace(fact.Content)
+		if subject == "" || content == "" {
+			continue
+		}
+		eventFacts[subject] = append(eventFacts[subject], formatUserFact(subject, content))
+		m.registerUser(groupID, subject)
+		// 搜索长期记忆中与该事实相关的旧事实，判断是新增、更新还是删除
+		oldFacts := m.searchSimilarFacts(ctx, groupID, subject, content, defaultFactTopK)
+		if m.updater == nil || len(oldFacts) == 0 {
+			m.addFact(ctx, groupID, subject, content)
+			changedSubjects[subject] = struct{}{}
+			continue
+		}
+		// 通过 LLM 决定更新策略
+		decision := m.updater.Decide(ctx, subject, content, oldFacts)
+		// 根据决策结果应用到长期记忆中，并记录有哪些主体的事实发生了变化
+		if m.applyDecision(ctx, groupID, subject, content, decision, oldFacts) {
+			changedSubjects[subject] = struct{}{}
+		}
 	}
-	item := dao.EmbeddingItem{
-		ID:   dao.NextEmbeddingID(),
-		Text: text,
-	}
-	if err := dao.DBManager.UpsertEmbeddingTexts(ctx, chatMemoryCollection(groupID), []dao.EmbeddingItem{item}); err != nil {
-		llog.Errorf("写入群聊记忆失败: %v", err)
+	// 这里是需要根据刚更新的事实来更新用户画像。
+	if len(changedSubjects) > 0 {
+		m.updateProfilesForSubjects(ctx, groupID, changedSubjects, eventFacts)
 	}
 }
 
@@ -217,7 +252,7 @@ func (m *MemoryManager) Retrieve(ctx context.Context, query, groupID string, nee
 	if !needMemory || query == "" || dao.DBManager == nil {
 		return nil
 	}
-	merged := dao.DBManager.GetTopK(ctx, chatMemoryCollection(groupID), 8, query)
+	merged := dao.DBManager.GetTopK(ctx, factCollection(groupID), 8, query)
 	merged = dedupeStrings(merged)
 	if m == nil || m.reranker == nil {
 		return merged
@@ -229,152 +264,394 @@ func (m *MemoryManager) Retrieve(ctx context.Context, query, groupID string, nee
 	return reranked
 }
 
-func chatMemoryCollection(groupID string) string {
-	return fmt.Sprintf("%s-%s", chatMemoryPrefix, groupID)
+func (m *MemoryManager) GetUserContext(ctx context.Context, groupID, name string, limit int) ([]string, string) {
+	facts := m.GetUserFacts(ctx, groupID, name, limit)
+	profile := m.GetUserProfile(ctx, groupID, name)
+	return facts, profile
 }
 
-func formatMemoryEventText(extraction MemoryExtraction) string {
-	participants := dedupeStrings(extraction.Participants)
-	participantsText := strings.Join(participants, "、")
-	cause := strings.TrimSpace(extraction.Cause)
-	process := strings.TrimSpace(extraction.Process)
-	result := strings.TrimSpace(extraction.Result)
-	if participantsText == "" && cause == "" && process == "" && result == "" {
-		return ""
-	}
-	if participantsText == "" {
-		participantsText = "未知"
-	}
-	if cause == "" {
-		cause = "无"
-	}
-	if process == "" {
-		process = "无"
-	}
-	if result == "" {
-		result = "无"
-	}
-	return fmt.Sprintf("群聊记忆: 参与者:%s 起因:%s 经过:%s 结果:%s", participantsText, cause, process, result)
-}
-
-func hasExtractionContent(extraction MemoryExtraction) bool {
-	if len(extraction.Participants) > 0 {
-		return true
-	}
-	if strings.TrimSpace(extraction.Cause) != "" {
-		return true
-	}
-	if strings.TrimSpace(extraction.Process) != "" {
-		return true
-	}
-	if strings.TrimSpace(extraction.Result) != "" {
-		return true
-	}
-	return false
-}
-
-func fallbackExtraction(messages []MemoryMessage) MemoryExtraction {
-	participants := collectParticipants(messages)
-	cause := ""
-	for _, msg := range messages {
-		if msg.Role == schema.User {
-			cause = strings.TrimSpace(msg.Content)
-			if cause != "" {
-				break
-			}
-		}
-	}
-	process := summarizeMessages(messages, 6)
-	result := ""
-	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == schema.Assistant {
-			result = strings.TrimSpace(messages[i].Content)
-			if result != "" {
-				break
-			}
-		}
-	}
-	if result == "" && len(messages) > 0 {
-		result = strings.TrimSpace(messages[len(messages)-1].Content)
-	}
-	return MemoryExtraction{
-		Sufficient:   true,
-		Participants: participants,
-		Cause:        truncateText(cause, 80),
-		Process:      truncateText(process, 120),
-		Result:       truncateText(result, 80),
-	}
-}
-
-func collectParticipants(messages []MemoryMessage) []string {
-	if len(messages) == 0 {
+func (m *MemoryManager) GetUserFacts(ctx context.Context, groupID, name string, limit int) []string {
+	name = strings.TrimSpace(name)
+	if name == "" || dao.DBManager == nil {
 		return nil
 	}
-	seen := make(map[string]struct{}, len(messages))
-	out := make([]string, 0, len(messages))
-	for _, msg := range messages {
-		name := memoryMessageSpeaker(msg)
-		if name == "" {
+	if limit <= 0 {
+		limit = defaultUserFactTopK
+	}
+	query := "用户:" + name
+	results := dao.DBManager.SearchTopKResults(ctx, factCollection(groupID), query, uint64(limit))
+	facts := make([]string, 0, len(results))
+	for _, res := range results {
+		text := extractFactText(res.Text)
+		subject := extractFactSubject(res.Text)
+		if subject != "" && subject != name {
 			continue
 		}
-		if _, ok := seen[name]; ok {
+		if subject == "" && !strings.Contains(res.Text, name) {
 			continue
 		}
-		seen[name] = struct{}{}
-		out = append(out, name)
+		formatted := formatUserFact(name, text)
+		if formatted == "" {
+			continue
+		}
+		facts = append(facts, formatted)
+	}
+	facts = dedupeStrings(facts)
+	if m != nil && m.reranker != nil && len(facts) > 1 {
+		reranked := m.reranker.TopN(8, facts, name)
+		if len(reranked) > 0 {
+			facts = reranked
+		}
+	}
+	return facts
+}
+
+func (m *MemoryManager) GetUserProfile(ctx context.Context, groupID, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" || dao.DBManager == nil {
+		return "无"
+	}
+	profile, err := dao.DBManager.GetUserProfile(ctx, groupID, name)
+	if err != nil || profile == nil {
+		return "无"
+	}
+	if strings.TrimSpace(profile.Summary) == "" {
+		return "无"
+	}
+	return profile.Summary
+}
+
+func (m *MemoryManager) UpdateProfiles(ctx context.Context) {
+	if m == nil || m.profileUpdater == nil || dao.DBManager == nil {
+		return
+	}
+	users := m.listKnownUsers()
+	subjects := make(map[string]struct{}, len(users))
+	for _, user := range users {
+		if user.Name == "" {
+			continue
+		}
+		subjects[user.Name] = struct{}{}
+	}
+	m.updateProfilesForSubjects(ctx, "", subjects, nil)
+}
+
+func (m *MemoryManager) updateProfilesForSubjects(ctx context.Context, groupID string, subjects map[string]struct{}, eventFacts map[string][]string) {
+	if m == nil || m.profileUpdater == nil || dao.DBManager == nil || len(subjects) == 0 {
+		return
+	}
+	// 遍历用户对象，逐个更新
+	for subject := range subjects {
+		m.updateProfileForSubject(ctx, groupID, subject, eventFacts[subject])
+	}
+}
+
+func (m *MemoryManager) updateProfileForSubject(ctx context.Context, groupID, subject string, extraFacts []string) {
+	subject = strings.TrimSpace(subject)
+	if subject == "" {
+		return
+	}
+	if groupID == "" {
+		for _, user := range m.listKnownUsers() {
+			if user.Name != subject {
+				continue
+			}
+			m.updateProfileForSubject(ctx, user.GroupID, subject, extraFacts)
+		}
+		return
+	}
+	// 获取和用户相关的事实
+	facts := m.GetUserFacts(ctx, groupID, subject, defaultUserFactTopK)
+	facts = mergeEventFacts(extraFacts, facts)
+	if len(facts) == 0 {
+		return
+	}
+	current := ProfileResult{}
+	existing, err := dao.DBManager.GetUserProfile(ctx, groupID, subject)
+	if err == nil && existing != nil {
+		current.Summary = existing.Summary
+		current.Tags = splitTags(existing.Tags)
+	}
+	// 这里也是基于 LLM 进行更新
+	updated := m.profileUpdater.Update(ctx, subject, facts, current)
+	if strings.TrimSpace(updated.Summary) == "" {
+		return
+	}
+	profile := &model.UserProfile{
+		GroupID: groupID,
+		Name:    subject,
+		Summary: updated.Summary,
+		Tags:    strings.Join(updated.Tags, ","),
+	}
+	if err := dao.DBManager.UpsertUserProfile(ctx, profile); err != nil {
+		llog.Errorf("更新用户画像失败: %v", err)
+	}
+}
+
+type factSearchQuery struct {
+	query         string
+	filterSubject bool
+}
+
+func (m *MemoryManager) searchSimilarFacts(ctx context.Context, groupID, subject, content string, limit int) []FactRecord {
+	if dao.DBManager == nil {
+		return nil
+	}
+	if limit <= 0 {
+		limit = defaultFactTopK
+	}
+	queries := buildFactSearchQueries(subject, content)
+	if len(queries) == 0 {
+		return nil
+	}
+	perQuery := limit * 2
+	seen := make(map[uint64]struct{}, limit*2)
+	out := make([]FactRecord, 0, limit)
+	for _, q := range queries {
+		results := dao.DBManager.SearchTopKResults(ctx, factCollection(groupID), q.query, uint64(perQuery))
+		for _, res := range results {
+			if len(out) >= limit {
+				return out
+			}
+			if res.ID == 0 {
+				continue
+			}
+			if _, ok := seen[res.ID]; ok {
+				continue
+			}
+			text := strings.TrimSpace(res.Text)
+			if text == "" {
+				continue
+			}
+			if q.filterSubject {
+				subjectInText := extractFactSubject(text)
+				if subjectInText != "" && subjectInText != subject {
+					continue
+				}
+				if subjectInText == "" && !strings.Contains(text, subject) {
+					continue
+				}
+			}
+			seen[res.ID] = struct{}{}
+			out = append(out, FactRecord{ID: res.ID, Text: text})
+		}
 	}
 	return out
 }
 
-func summarizeMessages(messages []MemoryMessage, limit int) string {
-	if len(messages) == 0 {
-		return ""
-	}
-	if limit <= 0 || limit > len(messages) {
-		limit = len(messages)
-	}
-	var builder strings.Builder
-	for i := 0; i < limit; i++ {
-		if i > 0 {
-			builder.WriteString(" | ")
+func (m *MemoryManager) applyDecision(ctx context.Context, groupID, subject, fallback string, decision FactDecision, oldFacts []FactRecord) bool {
+	event := strings.ToUpper(strings.TrimSpace(decision.Event))
+	switch event {
+	case "UPDATE":
+		id := parseDecisionID(decision.TargetID)
+		if id == 0 || !hasFactID(oldFacts, id) {
+			m.addFact(ctx, groupID, subject, pickDecisionText(decision, fallback))
+			return true
 		}
-		speaker := memoryMessageSpeaker(messages[i])
-		if speaker == "" {
-			speaker = "用户"
+		text := normalizeFactText(subject, pickDecisionText(decision, fallback))
+		m.upsertFact(ctx, groupID, id, text)
+		return true
+	case "DELETE":
+		id := parseDecisionID(decision.TargetID)
+		if id == 0 || !hasFactID(oldFacts, id) {
+			return false
 		}
-		builder.WriteString(speaker)
-		builder.WriteString(":")
-		builder.WriteString(strings.TrimSpace(messages[i].Content))
+		if err := dao.DBManager.DeleteEmbeddingByID(ctx, factCollection(groupID), id); err != nil {
+			llog.Errorf("删除事实失败: %v", err)
+		}
+		return true
+	case "NONE":
+		return false
+	default:
+		m.addFact(ctx, groupID, subject, pickDecisionText(decision, fallback))
+		return true
 	}
-	return builder.String()
 }
 
-func truncateText(text string, max int) string {
-	if max <= 0 {
-		return ""
+func (m *MemoryManager) addFact(ctx context.Context, groupID, subject, content string) {
+	text := normalizeFactText(subject, content)
+	if text == "" {
+		return
 	}
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		return ""
-	}
-	runes := []rune(trimmed)
-	if len(runes) <= max {
-		return trimmed
-	}
-	return string(runes[:max]) + "..."
+	id := dao.NextEmbeddingID()
+	m.upsertFact(ctx, groupID, id, text)
 }
 
-func memoryMessageSpeaker(msg MemoryMessage) string {
-	if msg.Role == schema.Assistant {
-		return "蓝妹"
+func (m *MemoryManager) upsertFact(ctx context.Context, groupID string, id uint64, text string) {
+	if dao.DBManager == nil || id == 0 || strings.TrimSpace(text) == "" {
+		return
 	}
-	if msg.Nickname != "" && msg.UserID != "" {
-		return fmt.Sprintf("%s(%s)", msg.Nickname, msg.UserID)
+	item := dao.EmbeddingItem{ID: id, Text: text}
+	if err := dao.DBManager.UpsertEmbeddingTexts(ctx, factCollection(groupID), []dao.EmbeddingItem{item}); err != nil {
+		llog.Errorf("写入事实失败: %v", err)
 	}
-	if msg.Nickname != "" {
-		return msg.Nickname
+}
+
+func (m *MemoryManager) registerUser(groupID, name string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
 	}
-	return msg.UserID
+	key := groupID + "|" + name
+	m.knownUsersMu.Lock()
+	m.knownUsers[key] = knownUser{key: UserKey{GroupID: groupID, Name: name}, lastSeen: time.Now()}
+	m.knownUsersMu.Unlock()
+}
+
+func (m *MemoryManager) listKnownUsers() []UserKey {
+	m.knownUsersMu.Lock()
+	defer m.knownUsersMu.Unlock()
+	out := make([]UserKey, 0, len(m.knownUsers))
+	for _, user := range m.knownUsers {
+		out = append(out, user.key)
+	}
+	return out
+}
+
+func factCollection(groupID string) string {
+	return fmt.Sprintf("%s-%s", factMemoryPrefix, groupID)
+}
+
+func normalizeFactText(subject, content string) string {
+	content = strings.TrimSpace(content)
+	subject = strings.TrimSpace(subject)
+	if content == "" || subject == "" {
+		return ""
+	}
+	if strings.Contains(content, "用户:") || strings.Contains(content, "事实:") {
+		return content
+	}
+	return fmt.Sprintf("用户:%s | 事实:%s", subject, content)
+}
+
+func buildFactSearchQueries(subject, content string) []factSearchQuery {
+	subject = strings.TrimSpace(subject)
+	content = strings.TrimSpace(content)
+	if subject == "" && content == "" {
+		return nil
+	}
+	queries := make([]factSearchQuery, 0, 3)
+	if subject != "" {
+		queries = append(queries, factSearchQuery{
+			query:         "用户:" + subject,
+			filterSubject: true,
+		})
+	}
+	if content != "" {
+		queries = append(queries, factSearchQuery{
+			query:         content,
+			filterSubject: false,
+		})
+	}
+	return queries
+}
+
+func extractFactSubject(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if !strings.Contains(text, "用户:") {
+		return ""
+	}
+	parts := strings.SplitN(text, "用户:", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	remain := parts[1]
+	fields := strings.SplitN(remain, "|", 2)
+	subject := strings.TrimSpace(fields[0])
+	return subject
+}
+
+func extractFactText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if !strings.Contains(text, "事实:") {
+		return text
+	}
+	parts := strings.SplitN(text, "事实:", 2)
+	if len(parts) < 2 {
+		return text
+	}
+	return strings.TrimSpace(parts[1])
+}
+
+func formatUserFact(subject, content string) string {
+	content = strings.TrimSpace(content)
+	subject = strings.TrimSpace(subject)
+	if content == "" {
+		return ""
+	}
+	if subject == "" {
+		return content
+	}
+	return subject + "：" + content
+}
+
+func parseDecisionID(raw any) uint64 {
+	switch v := raw.(type) {
+	case uint64:
+		return v
+	case int64:
+		if v < 0 {
+			return 0
+		}
+		return uint64(v)
+	case int:
+		if v < 0 {
+			return 0
+		}
+		return uint64(v)
+	case float64:
+		if v <= 0 {
+			return 0
+		}
+		return uint64(v)
+	case string:
+		parsed, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+		if err != nil {
+			return 0
+		}
+		return parsed
+	default:
+		return 0
+	}
+}
+
+func hasFactID(records []FactRecord, id uint64) bool {
+	for _, r := range records {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func pickDecisionText(decision FactDecision, fallback string) string {
+	text := strings.TrimSpace(decision.Text)
+	if text != "" {
+		return text
+	}
+	return fallback
+}
+
+func splitTags(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
 }
 
 func dedupeStrings(items []string) []string {
@@ -391,4 +668,14 @@ func dedupeStrings(items []string) []string {
 		out = append(out, item)
 	}
 	return out
+}
+
+func mergeEventFacts(eventFacts []string, storedFacts []string) []string {
+	if len(eventFacts) == 0 {
+		return storedFacts
+	}
+	merged := make([]string, 0, len(eventFacts)+len(storedFacts))
+	merged = append(merged, eventFacts...)
+	merged = append(merged, storedFacts...)
+	return dedupeStrings(merged)
 }
