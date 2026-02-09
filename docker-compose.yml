@@ -26,7 +26,7 @@ services:
     networks:
       - app-network
   pmhq:
-    image: linyuchen/pmhq:7.0.7
+    image: linyuchen/pmhq:latest
     container_name: pmhq
     privileged: true
     restart: always
@@ -38,7 +38,7 @@ services:
       - qq_volume:/root/.config/QQ
 
   llbot:
-    image: linyuchen/llbot:7.7.2
+    image: linyuchen/llbot:latest
     container_name: llonebot
     restart: always
     ports:
