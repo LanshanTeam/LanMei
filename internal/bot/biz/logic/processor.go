@@ -32,6 +32,7 @@ type Plugin interface {
 	Enabled() bool
 	Trigger(input string, ctx *zero.Ctx) bool
 	Execute(input string, ctx *zero.Ctx) error
+	Initialize() error
 }
 
 var Processor *ProcessorImpl
@@ -47,9 +48,17 @@ var DefaultPlugins = []Plugin{
 	&default_plugins.JrlpPlugin{},
 	&default_plugins.DayLuckPlugin{},
 	&default_plugins.DaySentencePlugin{},
+	&default_plugins.GitHubCardPlugin{},
 }
 
 func NewProcessor() ProcessorImpl {
+	for _, plugin := range DefaultPlugins {
+		err := plugin.Initialize()
+		if err != nil {
+			llog.Error("初始化插件 %s 失败: %v", plugin.Name(), err)
+		}
+	}
+
 	Processor = &ProcessorImpl{
 		limiter:    limiter.NewLimiter(),
 		chatEngine: llmchat.NewChatEngine(),
@@ -72,7 +81,7 @@ func (p *ProcessorImpl) ProcessMessage(input string, ctx *zero.Ctx) error {
 	if msg == "" {
 		return nil
 	}
-	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.MessageID.(int64), 3) {
+	if p.Context.Behind(ctx.Event.GroupID, ctx.Event.MessageID.(int64), 2) {
 		llog.Info("回复模式")
 		ctx.Send(message.ReplyWithMessage(
 			ctx.Event.MessageID, message.Text(msg),
@@ -99,8 +108,8 @@ func (p *ProcessorImpl) MessageProcess(input string, ctx *zero.Ctx) string {
 	return p.MessageProcess1(input, ctx)
 }
 
-func (p *ProcessorImpl) AddPlugin(plugin Plugin) {
-	p.Plugins = append(p.Plugins, plugin)
+func AddPlugin(plugin Plugin) {
+	Processor.Plugins = append(Processor.Plugins, plugin)
 }
 
 func (p *ProcessorImpl) Shutdown() {

@@ -44,3 +44,7 @@ func (p *DaySentencePlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *DaySentencePlugin) Initialize() error {
+	return nil
+}

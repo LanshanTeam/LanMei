@@ -36,3 +36,7 @@ func (p *PingPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *PingPlugin) Initialize() error {
+	return nil
+}

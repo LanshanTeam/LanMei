@@ -42,3 +42,7 @@ func (p *WcloudPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *WcloudPlugin) Initialize() error {
+	return nil
+}

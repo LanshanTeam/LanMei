@@ -52,3 +52,7 @@ func (p *TarotPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *TarotPlugin) Initialize() error {
+	return nil
+}

@@ -55,3 +55,7 @@ func (p *JrlpPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *JrlpPlugin) Initialize() error {
+	return nil
+}

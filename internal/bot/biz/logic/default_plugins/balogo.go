@@ -52,3 +52,7 @@ func (p *BaLogoPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *BaLogoPlugin) Initialize() error {
+	return nil
+}

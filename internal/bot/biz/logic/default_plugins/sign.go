@@ -59,6 +59,10 @@ func (p *SignPlugin) Execute(input string, ctx *zero.Ctx) error {
 	return nil
 }
 
+func (p *SignPlugin) Initialize() error {
+	return nil
+}
+
 type RankPlugin struct{}
 
 func (p *RankPlugin) Name() string {
@@ -91,5 +95,9 @@ func (p *RankPlugin) Execute(input string, ctx *zero.Ctx) error {
 		message.At(ctx.Event.Sender.ID),
 		message.Text(msg),
 	})
+	return nil
+}
+
+func (p *RankPlugin) Initialize() error {
 	return nil
 }

@@ -46,3 +46,7 @@ func (p *DayLuckPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *DayLuckPlugin) Initialize() error {
+	return nil
+}

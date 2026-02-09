@@ -64,3 +64,7 @@ func (p *CatPlugin) Execute(input string, ctx *zero.Ctx) error {
 	})
 	return nil
 }
+
+func (p *CatPlugin) Initialize() error {
+	return nil
+}
