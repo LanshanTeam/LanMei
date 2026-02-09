@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/bytedance/sonic"
 	zero "github.com/wdvxdr1123/ZeroBot"
@@ -36,10 +35,6 @@ type Plugin interface {
 	Initialize() error
 }
 
-var processor *ProcessorImpl
-
-var initProcessor = &sync.Once{}
-
 func defaultPlugins() []Plugin {
 	return []Plugin{
 		&default_plugins.WcloudPlugin{},
@@ -56,18 +51,17 @@ func defaultPlugins() []Plugin {
 	}
 }
 
-func DefaultProcessor() *ProcessorImpl {
-	initProcessor.Do(func() {
-		processor = &ProcessorImpl{}
-		if err := processor.Initialize(); err != nil {
-			llog.Error("初始化Processor失败")
+func NewProcessor() *ProcessorImpl {
+	processor := &ProcessorImpl{}
+	if err := processor.Initialize(); err != nil {
+		llog.Error("初始化Processor失败")
+	}
+	for _, plugin := range processor.Plugins {
+		if plugin.Initialize() != nil {
+			llog.Error("初始化插件 %s 失败", plugin.Name())
 		}
-		for _, plugin := range processor.Plugins {
-			if plugin.Initialize() != nil {
-				llog.Error("初始化插件 %s 失败", plugin.Name())
-			}
-		}
-	})
+	}
+
 	return processor
 }
 
@@ -79,14 +73,16 @@ func (p *ProcessorImpl) Initialize() error {
 	return nil
 }
 
-func AddPlugin(plugin Plugin) {
+func (p *ProcessorImpl) AddPlugin(plugin ...Plugin) {
 	if plugin == nil {
+		llog.Error("插件不能为空")
 		return
 	}
-	processor := DefaultProcessor()
-	processor.Plugins = append(processor.Plugins, plugin)
-	if err := plugin.Initialize(); err != nil {
-		llog.Error("初始化插件 %s 失败", plugin.Name())
+	p.Plugins = append(p.Plugins, plugin...)
+	for _, p := range plugin {
+		if err := p.Initialize(); err != nil {
+			llog.Error("初始化插件 %s 失败", p.Name())
+		}
 	}
 }
 

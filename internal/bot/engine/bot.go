@@ -16,7 +16,7 @@ import (
 )
 
 func InitBotEngine() {
-	p := logic.DefaultProcessor()
+	p := logic.NewProcessor()
 	command.InitWordCloud()
 	file.InitFileUploader(nil)
 	sensitive.InitFilter()
