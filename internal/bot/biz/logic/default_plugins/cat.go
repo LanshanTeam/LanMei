@@ -66,5 +66,6 @@ func (p *CatPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *CatPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

@@ -119,7 +119,7 @@ func f64ToF32(vec []float64) ([]float32, error) {
 }
 
 func (m *EmbeddingManagerImpl) UpdateKnowledge(ctx context.Context, datas []feishu.KeyValue, collection string) {
-	llog.Debug("", datas)
+	// llog.Debug("", datas)
 	if len(datas) == 0 {
 		return
 	}

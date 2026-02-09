@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/bytedance/sonic"
 	zero "github.com/wdvxdr1123/ZeroBot"
@@ -35,37 +36,58 @@ type Plugin interface {
 	Initialize() error
 }
 
-var Processor *ProcessorImpl
+var processor *ProcessorImpl
 
-var DefaultPlugins = []Plugin{
-	&default_plugins.WcloudPlugin{},
-	&default_plugins.CatPlugin{},
-	&default_plugins.TarotPlugin{},
-	&default_plugins.BaLogoPlugin{},
-	&default_plugins.PingPlugin{},
-	&default_plugins.SignPlugin{},
-	&default_plugins.RankPlugin{},
-	&default_plugins.JrlpPlugin{},
-	&default_plugins.DayLuckPlugin{},
-	&default_plugins.DaySentencePlugin{},
-	&default_plugins.GitHubCardPlugin{},
+var initProcessor = &sync.Once{}
+
+func defaultPlugins() []Plugin {
+	return []Plugin{
+		&default_plugins.WcloudPlugin{},
+		&default_plugins.CatPlugin{},
+		&default_plugins.TarotPlugin{},
+		&default_plugins.BaLogoPlugin{},
+		&default_plugins.PingPlugin{},
+		&default_plugins.SignPlugin{},
+		&default_plugins.RankPlugin{},
+		&default_plugins.JrlpPlugin{},
+		&default_plugins.DayLuckPlugin{},
+		&default_plugins.DaySentencePlugin{},
+		&default_plugins.GitHubCardPlugin{},
+	}
 }
 
-func NewProcessor() ProcessorImpl {
-	for _, plugin := range DefaultPlugins {
-		err := plugin.Initialize()
-		if err != nil {
-			llog.Error("初始化插件 %s 失败: %v", plugin.Name(), err)
+func DefaultProcessor() *ProcessorImpl {
+	initProcessor.Do(func() {
+		processor = &ProcessorImpl{}
+		if err := processor.Initialize(); err != nil {
+			llog.Error("初始化Processor失败")
 		}
-	}
+		for _, plugin := range processor.Plugins {
+			if plugin.Initialize() != nil {
+				llog.Error("初始化插件 %s 失败", plugin.Name())
+			}
+		}
+	})
+	return processor
+}
 
-	Processor = &ProcessorImpl{
-		limiter:    limiter.NewLimiter(),
-		chatEngine: llmchat.NewChatEngine(),
-		Plugins:    DefaultPlugins,
-		Context:    process_context.NewContext(),
+func (p *ProcessorImpl) Initialize() error {
+	p.limiter = limiter.NewLimiter()
+	p.chatEngine = llmchat.NewChatEngine()
+	p.Plugins = defaultPlugins()
+	p.Context = process_context.NewContext()
+	return nil
+}
+
+func AddPlugin(plugin Plugin) {
+	if plugin == nil {
+		return
 	}
-	return *Processor
+	processor := DefaultProcessor()
+	processor.Plugins = append(processor.Plugins, plugin)
+	if err := plugin.Initialize(); err != nil {
+		llog.Error("初始化插件 %s 失败", plugin.Name())
+	}
 }
 
 // 处理消息
@@ -108,10 +130,6 @@ func (p *ProcessorImpl) MessageProcess(input string, ctx *zero.Ctx) string {
 	return p.MessageProcess1(input, ctx)
 }
 
-func AddPlugin(plugin Plugin) {
-	Processor.Plugins = append(Processor.Plugins, plugin)
-}
-
 func (p *ProcessorImpl) Shutdown() {
 	if p == nil {
 		return
@@ -121,7 +139,7 @@ func (p *ProcessorImpl) Shutdown() {
 	}
 }
 
-// MessageProcess 生成回复消息。
+// MessageProcess1 生成回复消息。
 func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 	var msg string
 	userID := fmt.Sprintf("%d", ctx.Event.UserID)

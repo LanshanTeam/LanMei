@@ -56,5 +56,6 @@ func (p *GitHubCardPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *GitHubCardPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

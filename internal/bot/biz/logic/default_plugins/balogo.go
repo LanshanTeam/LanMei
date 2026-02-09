@@ -54,5 +54,6 @@ func (p *BaLogoPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *BaLogoPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

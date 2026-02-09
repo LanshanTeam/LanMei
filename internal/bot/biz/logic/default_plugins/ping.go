@@ -38,5 +38,6 @@ func (p *PingPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *PingPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

@@ -60,6 +60,7 @@ func (p *SignPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *SignPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }
 
@@ -99,5 +100,6 @@ func (p *RankPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *RankPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

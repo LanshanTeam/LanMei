@@ -16,7 +16,7 @@ import (
 )
 
 func InitBotEngine() {
-	logic.NewProcessor()
+	p := logic.DefaultProcessor()
 	command.InitWordCloud()
 	file.InitFileUploader(nil)
 	sensitive.InitFilter()
@@ -25,20 +25,16 @@ func InitBotEngine() {
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-shutdown
-		if logic.Processor != nil {
-			logic.Processor.Shutdown()
+		if p != nil {
+			p.Shutdown()
 		}
 		os.Exit(0)
 	}()
 
 	// 注册处理函数
 	zero.OnMessage(func(ctx *zero.Ctx) bool {
-		// llog.Info("", ctx.Event.Sender)
-		// if ctx.Event.Sender.ID != 1130157066 {
-		// 	return true
-		// }
 		input := ctx.Event.Message.ExtractPlainText()
-		logic.Processor.ProcessMessage(input, ctx)
+		p.ProcessMessage(input, ctx)
 
 		return true
 	})

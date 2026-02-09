@@ -57,5 +57,6 @@ func (p *JrlpPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *JrlpPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

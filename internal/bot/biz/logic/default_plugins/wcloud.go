@@ -44,5 +44,6 @@ func (p *WcloudPlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *WcloudPlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }

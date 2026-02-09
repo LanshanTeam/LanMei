@@ -46,5 +46,6 @@ func (p *DaySentencePlugin) Execute(input string, ctx *zero.Ctx) error {
 }
 
 func (p *DaySentencePlugin) Initialize() error {
+	PluginInitializeLog(p)
 	return nil
 }
