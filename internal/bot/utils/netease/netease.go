@@ -14,9 +14,7 @@ import (
 
 const defaultTimeout = 8 * time.Second
 
-var defaultBaseURLs = []string{
-	"http://ncm-api:3000",
-}
+var defaultBaseURL = "http://ncm-api:3000"
 
 type SongInfo struct {
 	ID         int64
@@ -27,21 +25,21 @@ type SongInfo struct {
 }
 
 type Client struct {
-	baseURLs []string
-	timeout  time.Duration
+	baseURL string
+	timeout time.Duration
 }
 
 func NewClient() *Client {
-	baseURLs := defaultBaseURLs
+	baseURL := defaultBaseURL
 	timeout := defaultTimeout
 	if config.K != nil {
 		if v := strings.TrimSpace(config.K.String("Music.BaseURL")); v != "" {
-			baseURLs = []string{strings.TrimRight(v, "/")}
+			baseURL = v
 		}
 	}
 	return &Client{
-		baseURLs: baseURLs,
-		timeout:  timeout,
+		baseURL: baseURL,
+		timeout: timeout,
 	}
 }
 
@@ -53,47 +51,40 @@ func (c *Client) SearchSongs(keywords string, limit int) ([]SongInfo, error) {
 	if limit <= 0 {
 		limit = 3
 	}
-	var lastErr error
-	for _, baseURL := range c.baseURLs {
-		endpoint, err := buildURL(baseURL, "/search", map[string]string{
-			"keywords": keywords,
-			"limit":    fmt.Sprintf("%d", limit),
-			"type":     "1",
-		})
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		var resp searchResponse
-		if err := c.getJSON(endpoint, &resp); err != nil {
-			lastErr = err
-			continue
-		}
-		if resp.Result == nil || len(resp.Result.Songs) == 0 {
-			return []SongInfo{}, nil
-		}
-		results := make([]SongInfo, 0, limit)
-		for _, song := range resp.Result.Songs {
-			if len(results) >= limit {
-				break
-			}
-			artists := pickArtists(song.Artists, song.AR)
-			album := pickAlbumName(song.Album, song.AL)
-			info := SongInfo{
-				ID:         song.ID,
-				Name:       song.Name,
-				Artists:    artists,
-				Album:      album,
-				DurationMs: pickDuration(song.Duration, song.Dt),
-			}
-			results = append(results, info)
-		}
-		return results, nil
+
+	baseURL := c.baseURL
+	endpoint, err := buildURL(baseURL, "/search", map[string]string{
+		"keywords": keywords,
+		"limit":    fmt.Sprintf("%d", limit),
+		"type":     "1",
+	})
+	if err != nil {
+		return nil, err
 	}
-	if lastErr != nil {
-		return nil, lastErr
+	var resp searchResponse
+	if err := c.getJSON(endpoint, &resp); err != nil {
+		return nil, err
 	}
-	return nil, errors.New("netease search failed")
+	if resp.Result == nil || len(resp.Result.Songs) == 0 {
+		return []SongInfo{}, nil
+	}
+	results := make([]SongInfo, 0, limit)
+	for _, song := range resp.Result.Songs {
+		if len(results) >= limit {
+			break
+		}
+		artists := pickArtists(song.Artists, song.AR)
+		album := pickAlbumName(song.Album, song.AL)
+		info := SongInfo{
+			ID:         song.ID,
+			Name:       song.Name,
+			Artists:    artists,
+			Album:      album,
+			DurationMs: pickDuration(song.Duration, song.Dt),
+		}
+		results = append(results, info)
+	}
+	return results, nil
 }
 
 func (c *Client) getJSON(endpoint string, out interface{}) error {

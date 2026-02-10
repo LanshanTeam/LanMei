@@ -73,6 +73,7 @@ func (m *MusicCardPlugin) Initialize() error {
 	if m.sessions == nil {
 		m.sessions = make(map[string]musicSession)
 	}
+	m.Client = netease.NewClient()
 	PluginInitializeLog(m)
 	return nil
 }
