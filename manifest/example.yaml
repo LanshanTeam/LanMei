@@ -19,6 +19,10 @@ OneBot:
 
 PublicIP: "lanmei:8080"
 
+Music:
+  BaseURL: "http://ncm-api:3000"
+
+
 feishu:
   AppID: ""
   AppSecret: ""

@@ -8,6 +8,7 @@ services:
       - openserp
     ports:
       - "8080:8080"
+      - "6060:6060"
     networks:
       - app-network
 
@@ -63,6 +64,16 @@ services:
     command: ["serve", "-a", "0.0.0.0", "-p", "7000"]
     networks:
       - app-network
+
+  ncm-api:
+    image: moefurina/ncm-api:latest
+    container_name: ncm-api
+    ports:
+      - "3000:3000"
+    restart: always
+    networks:
+      - app-network
+      
 
 volumes:
   qq_volume:

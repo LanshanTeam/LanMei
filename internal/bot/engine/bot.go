@@ -6,6 +6,8 @@ import (
 	"LanMei/internal/bot/config"
 	"LanMei/internal/bot/utils/file"
 	"LanMei/internal/bot/utils/sensitive"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -51,6 +53,9 @@ func InitBotEngine() {
 		},
 	})
 
+	go func() {
+		_ = http.ListenAndServe(":6060", nil)
+	}()
 	// Web服务器用于文件
 	router := gin.Default()
 	router.GET("/v1/file/:filename", func(c *gin.Context) {

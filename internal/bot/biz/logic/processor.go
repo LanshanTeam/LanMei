@@ -48,6 +48,7 @@ func defaultPlugins() []Plugin {
 		&default_plugins.DayLuckPlugin{},
 		&default_plugins.DaySentencePlugin{},
 		&default_plugins.GitHubCardPlugin{},
+		&default_plugins.MusicCardPlugin{},
 	}
 }
 
@@ -73,7 +74,7 @@ func (p *ProcessorImpl) Initialize() error {
 	return nil
 }
 
-func (p *ProcessorImpl) AddPlugin(plugin ...Plugin) {
+func (p *ProcessorImpl) RegisterPlugin(plugin ...Plugin) {
 	if plugin == nil {
 		llog.Error("插件不能为空")
 		return
