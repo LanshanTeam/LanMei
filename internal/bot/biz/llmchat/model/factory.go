@@ -21,35 +21,46 @@ func NewChatModel(cfg NodeConfig) (fmodel.BaseChatModel, error) {
 }
 
 func NewToolCallingChatModel(cfg NodeConfig, tool *schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
+	return NewToolCallingChatModelWithTools(cfg, toolsOrNil(tool))
+}
+
+func NewToolCallingChatModelWithTools(cfg NodeConfig, tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
 	switch cfg.Provider {
 	case ProviderGemini:
 		base, err := NewGeminiChatModel(cfg.GeminiConfig())
 		if err != nil {
 			return nil, err
 		}
-		if tool == nil {
+		if len(tools) == 0 {
 			return base, nil
 		}
-		return base.WithTools([]*schema.ToolInfo{tool})
+		return base.WithTools(tools)
 	case ProviderArk:
 		base, err := NewArkChatModel(cfg.ArkConfig())
 		if err != nil {
 			return nil, err
 		}
-		if tool == nil {
+		if len(tools) == 0 {
 			return base, nil
 		}
-		return base.WithTools([]*schema.ToolInfo{tool})
+		return base.WithTools(tools)
 	case ProviderOpenAI:
 		base, err := NewOpenAIChatModel(cfg.OpenAIConfig())
 		if err != nil {
 			return nil, err
 		}
-		if tool == nil {
+		if len(tools) == 0 {
 			return base, nil
 		}
-		return base.WithTools([]*schema.ToolInfo{tool})
+		return base.WithTools(tools)
 	default:
 		return nil, fmt.Errorf("unknown model provider: %s", cfg.Provider)
 	}
+}
+
+func toolsOrNil(tool *schema.ToolInfo) []*schema.ToolInfo {
+	if tool == nil {
+		return nil
+	}
+	return []*schema.ToolInfo{tool}
 }

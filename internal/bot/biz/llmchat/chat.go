@@ -7,16 +7,20 @@ import (
 	"LanMei/internal/bot/biz/dao"
 	"LanMei/internal/bot/biz/llmchat/flow"
 	"LanMei/internal/bot/biz/llmchat/flow/hooks"
-	flownodes "LanMei/internal/bot/biz/llmchat/flow/nodes"
 	llmtemplate "LanMei/internal/bot/biz/llmchat/flow/template"
 	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
 	"LanMei/internal/bot/biz/llmchat/memory"
 	llmmodel "LanMei/internal/bot/biz/llmchat/model"
+	reactbiz "LanMei/internal/bot/biz/llmchat/react"
+	"LanMei/internal/bot/biz/llmchat/reactlog"
 	"LanMei/internal/bot/config"
 	"LanMei/internal/bot/utils/feishu"
 	"LanMei/internal/bot/utils/llog"
 	"LanMei/internal/bot/utils/rerank"
 	"LanMei/internal/bot/utils/websearch"
+
+	"github.com/cloudwego/eino/compose"
+	reactagent "github.com/cloudwego/eino/flow/agent/react"
 )
 
 const (
@@ -33,30 +37,11 @@ type ChatEngine struct {
 
 func NewChatEngine() *ChatEngine {
 	chatConfig := mustLoadNodeConfig("Chat")
-	judgeConfig := mustLoadNodeConfig("Judge")
-	plannerConfig := mustLoadNodeConfig("Planner")
-	analysisConfig := mustLoadNodeConfig("Analysis")
 	memoryConfig := mustLoadNodeConfig("Memory")
-	searchFormatConfig := mustLoadNodeConfig("SearchFormat")
 
-	chatModel, err := llmmodel.NewChatModel(chatConfig)
+	reactModel, err := llmmodel.NewToolCallingChatModel(chatConfig, nil)
 	if err != nil {
-		llog.Fatal("初始化大模型", err)
-		return nil
-	}
-	plannerModel, err := llmmodel.NewToolCallingChatModel(plannerConfig, llmtemplate.BuildPlanTool())
-	if err != nil {
-		llog.Fatal("初始化 planner 工具失败", err)
-		return nil
-	}
-	judgeModel, err := llmmodel.NewToolCallingChatModel(judgeConfig, llmtemplate.BuildJudgeTool())
-	if err != nil {
-		llog.Fatal("初始化 judge 模型", err)
-		return nil
-	}
-	analysisModel, err := llmmodel.NewToolCallingChatModel(analysisConfig, flownodes.BuildTool())
-	if err != nil {
-		llog.Fatal("初始化 input 分析工具失败", err)
+		llog.Fatal("初始化 ReAct 模型", err)
 		return nil
 	}
 	factModel, err := llmmodel.NewToolCallingChatModel(memoryConfig, memory.BuildFactTool())
@@ -74,25 +59,12 @@ func NewChatEngine() *ChatEngine {
 		llog.Fatal("初始化 memory 画像工具失败", err)
 		return nil
 	}
-	searchModel, err := llmmodel.NewChatModel(searchFormatConfig)
-	if err != nil {
-		llog.Fatal("初始化 search_format 模型失败", err)
-		return nil
-	}
 
-	searchTemplate := llmtemplate.BuildSearchFormatTemplate()
-	template := llmtemplate.BuildChatTemplate()
-	planTemplate := llmtemplate.BuildPlanTemplate()
-	judgeTemplate := llmtemplate.BuildJudgeTemplate()
+	reactTemplate := llmtemplate.BuildReActTemplate()
 	hookRunner := hooks.NewRunner(hooks.NewDurationLogger())
-	chatHookInfo := hooks.CallInfo{Node: "chat", Model: chatConfig.Model}
-	judgeHookInfo := hooks.CallInfo{Node: "judge", Model: judgeConfig.Model}
-	planHookInfo := hooks.CallInfo{Node: "planner", Model: plannerConfig.Model}
-	analysisHookInfo := hooks.CallInfo{Node: "analysis", Model: analysisConfig.Model}
 	factHookInfo := hooks.CallInfo{Node: "fact_extract", Model: memoryConfig.Model}
 	factUpdateHookInfo := hooks.CallInfo{Node: "fact_update", Model: memoryConfig.Model}
 	profileHookInfo := hooks.CallInfo{Node: "profile", Model: memoryConfig.Model}
-	searchHookInfo := hooks.CallInfo{Node: "search_format", Model: searchFormatConfig.Model}
 
 	reranker := rerank.NewReranker(
 		config.K.String("Infini.APIKey"),
@@ -109,31 +81,43 @@ func NewChatEngine() *ChatEngine {
 	memoryWorker := memory.NewMemoryWorker(memoryManager, 12*time.Second, 4, 12)
 	memoryWorker.Start()
 	memoryManager.BindWorker(memoryWorker)
-	inputAnalyzer := flownodes.NewInputAnalyzer(analysisModel, hookRunner, analysisHookInfo)
 	searcher := websearch.NewClient()
 	frequencyManager := NewFrequencyControlManager()
 
-	chatFlow, err := flow.NewChatFlow(flowtypes.Dependencies{
-		ChatModel:      chatModel,
-		JudgeModel:     judgeModel,
-		PlannerModel:   plannerModel,
-		SearchModel:    searchModel,
-		Template:       template,
-		JudgeTemplate:  judgeTemplate,
-		PlanTemplate:   planTemplate,
-		SearchTemplate: searchTemplate,
-		InputAnalyzer:  inputAnalyzer,
-		Memory:         memoryManager,
-		Reranker:       reranker,
-		Searcher:       searcher,
-		Frequency:      frequencyManager,
-		Hooks:          hookRunner,
-		HookInfos: flowtypes.HookInfos{
-			Chat:   chatHookInfo,
-			Judge:  judgeHookInfo,
-			Plan:   planHookInfo,
-			Search: searchHookInfo,
+	reactLog := reactlog.NewWindow(0, 0, 0)
+	_, skillsMiddleware, skillTools := reactbiz.InitSkills()
+	reactTools, err := reactbiz.BuildTools(searcher, memoryManager, reranker)
+	if err != nil {
+		llog.Fatal("初始化 ReAct 工具失败", err)
+		return nil
+	}
+	allTools := append(reactTools, skillTools...)
+	skillInjector := func(prompt string) string { return prompt }
+	if skillsMiddleware != nil {
+		skillInjector = skillsMiddleware.InjectPrompt
+	}
+	unknownHandler := reactbiz.BuildUnknownToolHandler(allTools, reactLog)
+	reactAgent, err := reactagent.NewAgent(context.Background(), &reactagent.AgentConfig{
+		ToolCallingModel: reactModel,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools:               allTools,
+			UnknownToolsHandler: unknownHandler,
+			ToolCallMiddlewares: []compose.ToolMiddleware{reactbiz.TraceToolMiddleware(reactLog)},
 		},
+		ToolReturnDirectly: map[string]struct{}{reactbiz.ToolFinalResponse: {}},
+	})
+	if err != nil {
+		llog.Fatal("初始化 ReAct agent 失败", err)
+		return nil
+	}
+
+	chatFlow, err := flow.NewChatFlow(flowtypes.Dependencies{
+		ReActAgent:          reactAgent,
+		ReActTemplate:       reactTemplate,
+		SkillPromptInjector: skillInjector,
+		Memory:              memoryManager,
+		Frequency:           frequencyManager,
+		ReActLog:            reactLog,
 	})
 	if err != nil {
 		llog.Fatal("初始化聊天编排失败", err)
@@ -150,16 +134,21 @@ func NewChatEngine() *ChatEngine {
 }
 
 func (c *ChatEngine) ChatWithLanMei(nickname string, input string, ID string, groupId string, must bool) string {
+	return c.ChatWithLanMeiWithIntervention(nickname, input, ID, groupId, must, nil)
+}
+
+func (c *ChatEngine) ChatWithLanMeiWithIntervention(nickname string, input string, ID string, groupId string, must bool, scores *flowtypes.InterventionScores) string {
 	if c == nil || c.flow == nil {
 		return ""
 	}
 	ctx := context.Background()
 	reply, err := c.flow.Run(ctx, flowtypes.Request{
-		Nickname: nickname,
-		Input:    input,
-		UserID:   ID,
-		GroupID:  groupId,
-		Must:     must,
+		Nickname:     nickname,
+		Input:        input,
+		UserID:       ID,
+		GroupID:      groupId,
+		Must:         must,
+		Intervention: scores,
 	})
 	if err != nil {
 		llog.Error("chat flow error: %v", err)

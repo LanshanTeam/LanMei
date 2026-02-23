@@ -145,40 +145,40 @@ func (p *ProcessorImpl) MessageProcess1(input string, ctx *zero.Ctx) string {
 	if p.limiter.Deduper.Check(messageID) {
 		llog.Info("重复消息: ", input)
 		return ""
-	} else if sensitive.HaveSensitive(input) {
-		msg = ""
-	} else {
-		switch {
-		case len(strings.TrimSpace(input)) == 0 || len(input) > 2000:
-			msg = ""
-		default:
-			command.StaticWords(input, groupID)
+	}
+	if sensitive.HaveSensitive(input) {
+		return ""
+	}
+	if len(strings.TrimSpace(input)) == 0 || len(input) > 2000 {
+		return ""
+	}
 
-			if ctx.Event.IsToMe {
-				input = "蓝妹，" + input
-			} else {
-				for _, seg := range ctx.Event.Message {
-					if seg.Type == "at" {
-						qqId, _ := strconv.Atoi(seg.Data["qq"])
-						json := ctx.GetStrangerInfo(int64(qqId), false)
-						res := make(map[string]interface{})
-						err := sonic.UnmarshalString(json.Raw, &res)
-						if err != nil {
-							llog.Info("反序列化错误", err)
-						}
-						input = res["nickname"].(string) + "，" + input
-					}
+	command.StaticWords(input, groupID)
+
+	if ctx.Event.IsToMe {
+		input = "蓝妹，" + input
+	} else {
+		for _, seg := range ctx.Event.Message {
+			if seg.Type == "at" {
+				qqId, _ := strconv.Atoi(seg.Data["qq"])
+				json := ctx.GetStrangerInfo(int64(qqId), false)
+				res := make(map[string]interface{})
+				err := sonic.UnmarshalString(json.Raw, &res)
+				if err != nil {
+					llog.Info("反序列化错误", err)
 				}
+				input = res["nickname"].(string) + "，" + input
 			}
-			llog.Info("input:", input)
-			msg = p.chatEngine.ChatWithLanMei(
-				ctx.Event.Sender.NickName,
-				input,
-				userID,
-				groupID,
-				ctx.Event.IsToMe,
-			)
 		}
 	}
+	llog.Info("input:", input)
+	msg = p.chatEngine.ChatWithLanMei(
+		ctx.Event.Sender.NickName,
+		input,
+		userID,
+		groupID,
+		ctx.Event.IsToMe,
+	)
+
 	return msg
 }

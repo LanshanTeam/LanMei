@@ -21,25 +21,7 @@ func NewChatFlow(deps flowtypes.Dependencies) (*ChatFlow, error) {
 	if err := g.AddLambdaNode("user_context", compose.InvokableLambda(nodes.UserContextNode(deps))); err != nil {
 		return nil, err
 	}
-	if err := g.AddLambdaNode("analysis", compose.InvokableLambda(nodes.AnalysisNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("judge", compose.InvokableLambda(nodes.JudgeNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("plan", compose.InvokableLambda(nodes.PlanNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("gather_context", compose.InvokableLambda(nodes.GatherContextNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("search_format", compose.InvokableLambda(nodes.SearchFormatNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("build_prompt", compose.InvokableLambda(nodes.BuildPromptNode(deps))); err != nil {
-		return nil, err
-	}
-	if err := g.AddLambdaNode("chat", compose.InvokableLambda(nodes.ChatNode(deps))); err != nil {
+	if err := g.AddLambdaNode("react", compose.InvokableLambda(nodes.ReActNode(deps))); err != nil {
 		return nil, err
 	}
 	if err := g.AddLambdaNode("post_process", compose.InvokableLambda(nodes.PostProcessNode(deps))); err != nil {
@@ -52,28 +34,10 @@ func NewChatFlow(deps flowtypes.Dependencies) (*ChatFlow, error) {
 	if err := g.AddEdge("init", "user_context"); err != nil {
 		return nil, err
 	}
-	if err := g.AddEdge("user_context", "analysis"); err != nil {
+	if err := g.AddEdge("user_context", "react"); err != nil {
 		return nil, err
 	}
-	if err := g.AddEdge("analysis", "judge"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("judge", "plan"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("plan", "gather_context"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("gather_context", "search_format"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("search_format", "build_prompt"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("build_prompt", "chat"); err != nil {
-		return nil, err
-	}
-	if err := g.AddEdge("chat", "post_process"); err != nil {
+	if err := g.AddEdge("react", "post_process"); err != nil {
 		return nil, err
 	}
 	if err := g.AddEdge("post_process", compose.END); err != nil {
