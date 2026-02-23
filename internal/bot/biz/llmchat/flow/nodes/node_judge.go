@@ -3,7 +3,6 @@ package nodes
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"LanMei/internal/bot/biz/llmchat/flow/hooks"
 	flowtypes "LanMei/internal/bot/biz/llmchat/flow/types"
@@ -69,15 +68,7 @@ func JudgeNode(deps flowtypes.Dependencies) func(context.Context, *flowtypes.Sta
 				state.StopWith("judge_score_blocked")
 				return state, nil
 			}
-			repeatPenalty := clampPenalty(toFloat(params["repeat_penalty"]))
-			frequencyPenalty := clampPenalty(toFloat(params["frequency_penalty"]))
-			penalty := repeatPenalty + frequencyPenalty
-			if penalty > replyPenaltyMax {
-				penalty = replyPenaltyMax
-			}
-			threshold := baseReplyScoreThreshold + penalty
-			llog.Info(fmt.Sprintf("should Reply: params=%v score=%.1f penalty=%.1f threshold=%.1f", params, score, penalty, threshold))
-			if score >= threshold {
+			if score >= 62.0 {
 				return state, nil
 			}
 			state.StopWith("judge_threshold_blocked")

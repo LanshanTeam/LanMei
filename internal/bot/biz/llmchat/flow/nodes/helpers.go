@@ -12,9 +12,7 @@ import (
 )
 
 const (
-	baseReplyScoreThreshold = 55.0
-	replyFrequencyWindow    = 8
-	replyPenaltyMax         = 30.0
+	replyFrequencyWindow = 8
 )
 
 func formatPlan(plan flowtypes.Plan) string {
@@ -28,15 +26,17 @@ func computeReplyScore(params map[string]interface{}) (float64, bool) {
 	userEmotionNeed := toFloat(params["user_emotion_need"])
 	contextFit := toFloat(params["context_fit"])
 	addressedToMe := toFloat(params["addressed_to_me"])
+	repeatPenalty := toFloat(params["repeat_penalty"])
+	frequencyPenalty := toFloat(params["frequency_penalty"])
 
-	if emotionalValue < 45.0 || contextFit < 30.0 {
+	if emotionalValue < 45.0 || contextFit < 30.0 || repeatPenalty > 0.0 || frequencyPenalty > 20.0 {
 		return 0, false
 	}
 	if userEmotionNeed < 40.0 && addressedToMe < 30.0 {
 		return 0, false
 	}
 
-	score := emotionalValue*0.55 + userEmotionNeed*0.3 + contextFit*0.1 + addressedToMe*0.05
+	score := emotionalValue*0.3 + userEmotionNeed*0.3 + contextFit*0.3 + addressedToMe*0.1 - min(30.0, repeatPenalty+frequencyPenalty)*0.5
 	return score, true
 }
 
@@ -54,16 +54,6 @@ func toFloat(value interface{}) float64 {
 	default:
 		return 0
 	}
-}
-
-func clampPenalty(value float64) float64 {
-	if value < 0 {
-		return 0
-	}
-	if value > replyPenaltyMax {
-		return replyPenaltyMax
-	}
-	return value
 }
 
 func recentAssistantReplies(history []schema.Message, window int) int {
