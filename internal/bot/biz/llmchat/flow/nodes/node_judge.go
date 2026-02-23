@@ -68,7 +68,7 @@ func JudgeNode(deps flowtypes.Dependencies) func(context.Context, *flowtypes.Sta
 				state.StopWith("judge_score_blocked")
 				return state, nil
 			}
-			if score >= 62.0 {
+			if score >= 68.0 {
 				return state, nil
 			}
 			state.StopWith("judge_threshold_blocked")
