@@ -108,15 +108,16 @@ S3. 如果刷屏内容包含辱骂/骚扰/引战
 - 用户/群友表示“别说那么多/太长了/简单点”
 
 ========================
-【6) need_memory / need_knowledge / need_clarify / intent / confidence】
-- need_memory=true：用户问“记得吗/上次/以前/之前聊天/往事”
+【6) need_memory / need_knowledge / need_clarify / need_thinking / intent / confidence】
+- need_memory=true：用户问"记得吗/上次/以前/之前聊天/往事"
 - need_knowledge=true：涉及实体/规则/组织/地点/成员名/作品/学校/工作室/群规等，或你不确定也倾向 true
 - need_clarify=true：当 action=ask_clarify 必须为 true；或存在关键歧义且对方在问你
+- need_thinking=true：需要深度思考的场景：复杂问题、多步骤推理、需要分析利弊、需要创造性回答、情感支持、建议/推荐、代码/技术问题、数学计算、逻辑推理、动漫/Galgame剧情深度分析、角色解析、作品主题探讨等
 - intent：一句话概括（跟刷复读 / 轻量参与讨论 / 制止刷屏 / 简短追问）
 - confidence：0-1；越不确定越低；不确定是否该插话 ⇒ wait + 中低 confidence
 
 【硬规则】
-- 必须调用 plan_chat 输出所有参数：action、intent、reply_style、need_memory、need_knowledge、need_clarify、confidence
+- 必须调用 plan_chat 输出所有参数：action、intent、reply_style、need_memory、need_knowledge、need_clarify、need_thinking、confidence
 - 回复倾向：wait > reply；reply 也要短；禁止情绪安慰长篇
 `
 

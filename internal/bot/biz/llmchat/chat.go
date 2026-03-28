@@ -33,6 +33,7 @@ type ChatEngine struct {
 
 func NewChatEngine() *ChatEngine {
 	chatConfig := mustLoadNodeConfig("Chat")
+	chatSimpleConfig := mustLoadNodeConfig("ChatSimple")
 	judgeConfig := mustLoadNodeConfig("Judge")
 	plannerConfig := mustLoadNodeConfig("Planner")
 	analysisConfig := mustLoadNodeConfig("Analysis")
@@ -40,6 +41,11 @@ func NewChatEngine() *ChatEngine {
 	searchFormatConfig := mustLoadNodeConfig("SearchFormat")
 
 	chatModel, err := llmmodel.NewChatModel(chatConfig)
+	if err != nil {
+		llog.Fatal("初始化大模型", err)
+		return nil
+	}
+	chatSimpleModel, err := llmmodel.NewChatModel(chatSimpleConfig)
 	if err != nil {
 		llog.Fatal("初始化大模型", err)
 		return nil
@@ -82,10 +88,12 @@ func NewChatEngine() *ChatEngine {
 
 	searchTemplate := llmtemplate.BuildSearchFormatTemplate()
 	template := llmtemplate.BuildChatTemplate()
+	simpleTemplate := llmtemplate.BuildChatSimpleTemplate()
 	planTemplate := llmtemplate.BuildPlanTemplate()
 	judgeTemplate := llmtemplate.BuildJudgeTemplate()
 	hookRunner := hooks.NewRunner(hooks.NewDurationLogger())
 	chatHookInfo := hooks.CallInfo{Node: "chat", Model: chatConfig.Model}
+	chatSimpleHookInfo := hooks.CallInfo{Node: "chat_simple", Model: chatSimpleConfig.Model}
 	judgeHookInfo := hooks.CallInfo{Node: "judge", Model: judgeConfig.Model}
 	planHookInfo := hooks.CallInfo{Node: "planner", Model: plannerConfig.Model}
 	analysisHookInfo := hooks.CallInfo{Node: "analysis", Model: analysisConfig.Model}
@@ -114,25 +122,28 @@ func NewChatEngine() *ChatEngine {
 	frequencyManager := NewFrequencyControlManager()
 
 	chatFlow, err := flow.NewChatFlow(flowtypes.Dependencies{
-		ChatModel:      chatModel,
-		JudgeModel:     judgeModel,
-		PlannerModel:   plannerModel,
-		SearchModel:    searchModel,
-		Template:       template,
-		JudgeTemplate:  judgeTemplate,
-		PlanTemplate:   planTemplate,
-		SearchTemplate: searchTemplate,
-		InputAnalyzer:  inputAnalyzer,
-		Memory:         memoryManager,
-		Reranker:       reranker,
-		Searcher:       searcher,
-		Frequency:      frequencyManager,
-		Hooks:          hookRunner,
+		ChatModel:       chatModel,
+		ChatSimpleModel: chatSimpleModel,
+		JudgeModel:      judgeModel,
+		PlannerModel:    plannerModel,
+		SearchModel:     searchModel,
+		Template:        template,
+		SimpleTemplate:  simpleTemplate,
+		JudgeTemplate:   judgeTemplate,
+		PlanTemplate:    planTemplate,
+		SearchTemplate:  searchTemplate,
+		InputAnalyzer:   inputAnalyzer,
+		Memory:          memoryManager,
+		Reranker:        reranker,
+		Searcher:        searcher,
+		Frequency:       frequencyManager,
+		Hooks:           hookRunner,
 		HookInfos: flowtypes.HookInfos{
-			Chat:   chatHookInfo,
-			Judge:  judgeHookInfo,
-			Plan:   planHookInfo,
-			Search: searchHookInfo,
+			Chat:       chatHookInfo,
+			ChatSimple: chatSimpleHookInfo,
+			Judge:      judgeHookInfo,
+			Plan:       planHookInfo,
+			Search:     searchHookInfo,
 		},
 	})
 	if err != nil {

@@ -30,6 +30,7 @@ type Plan struct {
 	NeedMemory    bool    `json:"need_memory"`
 	NeedKnowledge bool    `json:"need_knowledge"`
 	NeedClarify   bool    `json:"need_clarify"`
+	NeedThinking  bool    `json:"need_thinking"`
 	Confidence    float64 `json:"confidence"`
 }
 

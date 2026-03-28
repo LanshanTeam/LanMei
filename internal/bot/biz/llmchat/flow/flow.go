@@ -9,6 +9,13 @@ import (
 	"github.com/cloudwego/eino/compose"
 )
 
+func chatRouter(ctx context.Context, state *flowtypes.State) (string, error) {
+	if state.Plan.NeedThinking {
+		return "chat", nil
+	}
+	return "chat_simple", nil
+}
+
 type ChatFlow struct {
 	runner compose.Runnable[*flowtypes.State, *flowtypes.State]
 }
@@ -42,6 +49,9 @@ func NewChatFlow(deps flowtypes.Dependencies) (*ChatFlow, error) {
 	if err := g.AddLambdaNode("chat", compose.InvokableLambda(nodes.ChatNode(deps))); err != nil {
 		return nil, err
 	}
+	if err := g.AddLambdaNode("chat_simple", compose.InvokableLambda(nodes.ChatSimpleNode(deps))); err != nil {
+		return nil, err
+	}
 	if err := g.AddLambdaNode("post_process", compose.InvokableLambda(nodes.PostProcessNode(deps))); err != nil {
 		return nil, err
 	}
@@ -70,10 +80,16 @@ func NewChatFlow(deps flowtypes.Dependencies) (*ChatFlow, error) {
 	if err := g.AddEdge("search_format", "build_prompt"); err != nil {
 		return nil, err
 	}
-	if err := g.AddEdge("build_prompt", "chat"); err != nil {
+	if err := g.AddBranch("build_prompt", compose.NewGraphBranch(chatRouter, map[string]bool{
+		"chat":        true,
+		"chat_simple": true,
+	})); err != nil {
 		return nil, err
 	}
 	if err := g.AddEdge("chat", "post_process"); err != nil {
+		return nil, err
+	}
+	if err := g.AddEdge("chat_simple", "post_process"); err != nil {
 		return nil, err
 	}
 	if err := g.AddEdge("post_process", compose.END); err != nil {

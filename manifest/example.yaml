@@ -41,6 +41,16 @@ LLM:
       Temperature: 0.8
       PresencePenalty: 1.8
       Thinking: "enabled"
+    ChatSimple:
+      Type: "ark"
+      Model: "glm-4-7-251222"
+      BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
+      Region: "cn-beijing"
+      APIKey: "
+      RetryTimes: 1
+      Temperature: 0.8
+      PresencePenalty: 1.8
+      Thinking: "disabled"
     Judge:
       Type: "ark"
       Model: "doubao-seed-1-8-251228"

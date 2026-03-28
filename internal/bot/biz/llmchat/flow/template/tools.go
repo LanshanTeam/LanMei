@@ -37,6 +37,11 @@ func BuildPlanTool() *schema.ToolInfo {
 				Desc:     "是否需要澄清或补充信息",
 				Required: true,
 			},
+			"need_thinking": {
+				Type:     schema.Boolean,
+				Desc:     "是否需要深度思考：复杂问题、多步骤推理、分析利弊、创造性回答、情感支持、建议推荐、代码技术问题、数学计算、逻辑推理、动漫/Galgame剧情深度分析等场景为 true",
+				Required: true,
+			},
 			"confidence": {
 				Type:     schema.Number,
 				Desc:     "0-1 之间的置信度",

@@ -14,7 +14,12 @@ func BuildPromptNode(deps flowtypes.Dependencies) func(context.Context, *flowtyp
 		if state == nil || state.Stop {
 			return state, nil
 		}
-		if deps.Template == nil {
+		// 根据 need_thinking 选择模板
+		template := deps.Template
+		if !state.Plan.NeedThinking && deps.SimpleTemplate != nil {
+			template = deps.SimpleTemplate
+		}
+		if template == nil {
 			state.StopWith("template_missing")
 			return state, nil
 		}
@@ -23,7 +28,7 @@ func BuildPromptNode(deps flowtypes.Dependencies) func(context.Context, *flowtyp
 			rawInput = state.Analysis.OptimizedInput
 		}
 		augmentedInput := state.Request.Nickname + "说：" + rawInput
-		promptInput, err := deps.Template.Format(ctx, map[string]any{
+		promptInput, err := template.Format(ctx, map[string]any{
 			"message":          augmentedInput,
 			"time":             time.Now(),
 			"feishu":           state.Knowledge,

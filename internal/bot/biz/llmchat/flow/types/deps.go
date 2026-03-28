@@ -23,26 +23,29 @@ type InputAnalyzer interface {
 }
 
 type HookInfos struct {
-	Chat   hooks.CallInfo
-	Judge  hooks.CallInfo
-	Plan   hooks.CallInfo
-	Search hooks.CallInfo
+	Chat       hooks.CallInfo
+	ChatSimple hooks.CallInfo
+	Judge      hooks.CallInfo
+	Plan       hooks.CallInfo
+	Search     hooks.CallInfo
 }
 
 type Dependencies struct {
-	ChatModel      fmodel.BaseChatModel
-	JudgeModel     fmodel.ToolCallingChatModel
-	PlannerModel   fmodel.ToolCallingChatModel
-	SearchModel    fmodel.BaseChatModel
-	Template       *prompt.DefaultChatTemplate
-	JudgeTemplate  *prompt.DefaultChatTemplate
-	PlanTemplate   *prompt.DefaultChatTemplate
-	SearchTemplate *prompt.DefaultChatTemplate
-	InputAnalyzer  InputAnalyzer
-	Memory         *memory.MemoryManager
-	Reranker       *rerank.Reranker
-	Searcher       *websearch.Client
-	Frequency      FrequencyController
-	Hooks          *hooks.Runner
-	HookInfos      HookInfos
+	ChatModel       fmodel.BaseChatModel
+	ChatSimpleModel fmodel.BaseChatModel
+	JudgeModel      fmodel.ToolCallingChatModel
+	PlannerModel    fmodel.ToolCallingChatModel
+	SearchModel     fmodel.BaseChatModel
+	Template        *prompt.DefaultChatTemplate
+	SimpleTemplate  *prompt.DefaultChatTemplate
+	JudgeTemplate   *prompt.DefaultChatTemplate
+	PlanTemplate    *prompt.DefaultChatTemplate
+	SearchTemplate  *prompt.DefaultChatTemplate
+	InputAnalyzer   InputAnalyzer
+	Memory          *memory.MemoryManager
+	Reranker        *rerank.Reranker
+	Searcher        *websearch.Client
+	Frequency       FrequencyController
+	Hooks           *hooks.Runner
+	HookInfos       HookInfos
 }
