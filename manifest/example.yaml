@@ -87,13 +87,15 @@ LLM:
       RetryTimes: 1
       Temperature: 0.2
       Thinking: "disabled"
-Ark:
-  Embed:
-    Model: "doubao-embedding-large-text-240915"
-    BaseURL: "https://ark.cn-beijing.volces.com/api/v3"
-    Region: "cn-beijing"
-    APIKey: ""
-    RetryTimes: 1
+
+Embed:
+  Provider: "zhipu"
+  APIKey: ""
+  BaseURL: "https://open.bigmodel.cn/api/paas/v4/embeddings"
+  Model: "embedding-3"
+  Dimensions: 0
+  Region: ""
+  RetryTimes: 1
 
 Infini:
   APIKey: ""

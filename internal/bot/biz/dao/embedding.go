@@ -1,14 +1,18 @@
 package dao
 
 import (
-	"LanMei/internal/bot/config"
-	"LanMei/internal/bot/utils/feishu"
-	"LanMei/internal/bot/utils/llog"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"strings"
+	"time"
+
+	"LanMei/internal/bot/config"
+	"LanMei/internal/bot/utils/embedding"
+	"LanMei/internal/bot/utils/feishu"
+	"LanMei/internal/bot/utils/llog"
 
 	embed "github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/pgvector/pgvector-go"
@@ -18,7 +22,7 @@ import (
 
 type EmbeddingManagerImpl struct {
 	db       *gorm.DB
-	embedder *embed.Embedder
+	embedder embedding.Embedder
 }
 
 type EmbeddingRecord struct {
@@ -35,8 +39,7 @@ func (EmbeddingRecord) TableName() string {
 var CollectionName = "LanMei-Embed"
 
 func NewEmbeddingManager(db *gorm.DB) *EmbeddingManagerImpl {
-	cfg := loadEmbedConfig()
-	embedder, err := embed.NewEmbedder(context.Background(), cfg)
+	embedder, err := loadEmbedder()
 	if err != nil {
 		llog.Fatal("初始化向量模型失败", err)
 		return nil
@@ -48,26 +51,52 @@ func NewEmbeddingManager(db *gorm.DB) *EmbeddingManagerImpl {
 	return m
 }
 
-func loadEmbedConfig() *embed.EmbeddingConfig {
-	retryTimes := 1
-	if config.K != nil {
-		if config.K.Exists("Ark.Embed.RetryTimes") {
-			retryTimes = config.K.Int("Ark.Embed.RetryTimes")
-		} else if config.K.Exists("Ark.RetryTimes") {
-			retryTimes = config.K.Int("Ark.RetryTimes")
+func loadEmbedder() (embedding.Embedder, error) {
+	provider := strings.ToLower(readConfigString("Embed.Provider"))
+
+	switch provider {
+	case "zhipu":
+		cfg := &embedding.Config{
+			Provider:   embedding.ProviderZhipu,
+			APIKey:     readConfigString("Embed.APIKey"),
+			BaseURL:    readConfigString("Embed.BaseURL"),
+			Model:      readConfigString("Embed.Model"),
+			Dimensions: readConfigInt("Embed.Dimensions"),
+			Timeout:    30 * time.Second,
 		}
+		llog.Info(fmt.Sprintf("使用智谱AI Embedding: model=%s", cfg.Model))
+		return embedding.NewEmbedder(cfg)
+
+	case "ark":
+		retryTimes := readConfigInt("Embed.RetryTimes")
+		if retryTimes == 0 {
+			retryTimes = 1
+		}
+		cfg := &embed.EmbeddingConfig{
+			BaseURL:    readConfigString("Embed.BaseURL"),
+			Region:     readConfigString("Embed.Region"),
+			APIKey:     readConfigString("Embed.APIKey"),
+			Model:      readConfigString("Embed.Model"),
+			RetryTimes: &retryTimes,
+		}
+		llog.Info(fmt.Sprintf("使用火山引擎 Embedding: model=%s", cfg.Model))
+		arkEmbedder, err := embed.NewEmbedder(context.Background(), cfg)
+		if err != nil {
+			return nil, err
+		}
+		return &arkEmbedderWrapper{embedder: arkEmbedder}, nil
+
+	default:
+		return nil, fmt.Errorf("Embed.Provider must be 'zhipu' or 'ark', got: '%s'", provider)
 	}
-	baseURL := readConfigString("Ark.Embed.BaseURL", "Ark.BaseURL")
-	region := readConfigString("Ark.Embed.Region", "Ark.Region")
-	apiKey := readConfigString("Ark.Embed.APIKey", "Ark.APIKey")
-	model := readConfigString("Ark.Embed.Model", "Ark.EmbedModel", "Ark.Model")
-	return &embed.EmbeddingConfig{
-		BaseURL:    baseURL,
-		Region:     region,
-		APIKey:     apiKey,
-		Model:      model,
-		RetryTimes: &retryTimes,
-	}
+}
+
+type arkEmbedderWrapper struct {
+	embedder *embed.Embedder
+}
+
+func (w *arkEmbedderWrapper) EmbedStrings(ctx context.Context, texts []string) ([][]float64, error) {
+	return w.embedder.EmbedStrings(ctx, texts)
 }
 
 func readConfigString(keys ...string) string {
@@ -84,6 +113,16 @@ func readConfigString(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func readConfigInt(key string) int {
+	if config.K == nil {
+		return 0
+	}
+	if config.K.Exists(key) {
+		return config.K.Int(key)
+	}
+	return 0
 }
 
 type PointF64 struct {
@@ -119,7 +158,6 @@ func f64ToF32(vec []float64) ([]float32, error) {
 }
 
 func (m *EmbeddingManagerImpl) UpdateKnowledge(ctx context.Context, datas []feishu.KeyValue, collection string) {
-	// llog.Debug("", datas)
 	if len(datas) == 0 {
 		return
 	}
@@ -188,7 +226,6 @@ func (m *EmbeddingManagerImpl) UpsertTextItems(ctx context.Context, collection s
 	}).CreateInBatches(records, 200).Error
 }
 
-// ====== TopK：查询向量只收 float64，返回 payload 为 map[string][]string ======
 func (m *EmbeddingManagerImpl) SearchTopKF64(ctx context.Context, collection string, query []float64, topK uint64) ([]SearchResult, error) {
 	if topK == 0 {
 		topK = 5
